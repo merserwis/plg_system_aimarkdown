@@ -10,7 +10,7 @@ use Joomla\Event\SubscriberInterface;
 
 /**
  * Main plugin class providing clean, cached Markdown negotiation with YAML Frontmatter,
- * Tab/Accordion unrolling, PDF prioritization, and local AI bot analytics.
+ * Tab/Accordion unrolling, PDF prioritization, and local AI analytics.
  */
 final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 {
@@ -35,7 +35,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         // 1. Standard HTML requests
         if (!$isMarkdown) {
-            if ($method === 'HEAD') {
+            if ($method === 'HEAD' && (bool) $this->params->get('show_alternate_link', 1)) {
                 $this->sendDiscoveryHeaders();
                 $app->close();
             }
@@ -93,7 +93,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        $html = $app->getBody();
+        $html = trim($app->getBody());
         if (empty($html)) {
             return;
         }
@@ -156,20 +156,15 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         $linkHeaderValue = implode(', ', $linkHeaders);
 
         $app->setHeader('Link', $linkHeaderValue, false);
+        $app->setHeader('Vary', 'Accept', false);
+
         if (!headers_sent()) {
+            header('Content-Type: text/html; charset=utf-8');
             header('Link: ' . $linkHeaderValue, false);
-            header('Vary: Accept');
+            header('Vary: Accept', false);
         }
     }
 
-    /**
-     * Send HTTP headers for Markdown response.
-     *
-     * @param string $canonicalUrl
-     * @param string $cacheStatus (HIT or MISS)
-     * @param string $markdownContent
-     * @return void
-     */
     private function sendMarkdownHeaders(string $canonicalUrl, string $cacheStatus, string $markdownContent): void
     {
         $app        = $this->getApplication();
@@ -183,7 +178,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         if (!headers_sent()) {
             header('Content-Type: text/markdown; charset=utf-8');
-            header('Vary: Accept');
+            header('Vary: Accept', false);
             header('Link: <' . $canonicalUrl . '>; rel="canonical"; type="text/html"');
             header('Cache-Control: public, max-age=' . $cacheTtl);
             header('X-Markdown-Cache: ' . $cacheStatus);
@@ -191,9 +186,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
     }
 
-    /**
-     * Log AI visit locally to Joomla database.
-     */
     private function logAiVisit(string $url, int $isCacheHit): void
     {
         if (!(bool) $this->params->get('enable_analytics', 1)) {
@@ -205,8 +197,16 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $userAgent = $app->input->server->getString('HTTP_USER_AGENT', '');
             $botName = $this->detectAiBot($userAgent);
 
-            // Anonymize IP (mask last octet for privacy)
-            $rawIp = $app->input->server->getString('REMOTE_ADDR', '');
+            // Cloudflare real IP detection fallback
+            $rawIp = $app->input->server->getString('HTTP_CF_CONNECTING_IP', '')
+                ?: $app->input->server->getString('HTTP_X_FORWARDED_FOR', '')
+                ?: $app->input->server->getString('REMOTE_ADDR', '');
+
+            if (str_contains($rawIp, ',')) {
+                $rawIp = trim(explode(',', $rawIp)[0]);
+            }
+
+            // Anonymize IP (mask last octet for privacy / GDPR)
             $maskedIp = preg_replace(['/\.\d+$/', '/:[0-9a-fA-F]+$/'], ['.xxx', ':xxxx'], $rawIp) ?: 'Unknown';
 
             $db = Factory::getDbo();
@@ -231,7 +231,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $db->setQuery($query);
             $db->execute();
 
-            // Prune old logs occasionally (1% chance per request)
+            // Prune old logs (1% probability per request)
             if (random_int(1, 100) === 1) {
                 $days = (int) $this->params->get('log_retention_days', 30);
                 $pruneQuery = $db->getQuery(true)
@@ -245,16 +245,21 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
     }
 
-    /**
-     * Identify AI bot name based on User-Agent.
-     */
     private function detectAiBot(string $userAgent): string
     {
+        $userAgent = trim($userAgent);
+
+        if (empty($userAgent)) {
+            return 'Other: Unknown / Direct';
+        }
+
         $bots = [
+            'OAI-SearchBot'       => 'SearchGPT (OAI-SearchBot)',
             'ChatGPT-User'        => 'ChatGPT Search',
             'GPTBot'              => 'OpenAI GPTBot',
             'ClaudeBot'           => 'Anthropic ClaudeBot',
             'Claude-Web'          => 'Anthropic Claude Web',
+            'Claude-Search'       => 'Anthropic Claude Search',
             'anthropic-ai'        => 'Anthropic AI',
             'PerplexityBot'       => 'Perplexity AI',
             'Google-Extended'     => 'Google Gemini',
@@ -266,6 +271,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             'cohere-ai'           => 'Cohere AI',
             'Diffbot'             => 'Diffbot',
             'CCBot'               => 'Common Crawl',
+            'Timpibot'            => 'Timpi AI',
             'isitagentready'      => 'Cloudflare Agent Ready Audit',
         ];
 
@@ -275,7 +281,39 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
         }
 
-        return 'Other AI / Custom Client';
+        return 'Other: ' . $this->extractClientName($userAgent);
+    }
+
+    private function extractClientName(string $userAgent): string
+    {
+        if (preg_match('/compatible;\s*([a-zA-Z0-9_\-\.]+)/i', $userAgent, $matches)) {
+            return mb_substr(trim($matches[1]), 0, 45);
+        }
+
+        if (stripos($userAgent, 'Mozilla/') !== false) {
+            if (stripos($userAgent, 'Edg/') !== false) {
+                return 'Edge Browser';
+            }
+            if (stripos($userAgent, 'Chrome/') !== false) {
+                return 'Chrome Browser';
+            }
+            if (stripos($userAgent, 'Firefox/') !== false) {
+                return 'Firefox Browser';
+            }
+            if (stripos($userAgent, 'Safari/') !== false && stripos($userAgent, 'Chrome/') === false) {
+                return 'Safari Browser';
+            }
+            if (stripos($userAgent, 'OPR/') !== false || stripos($userAgent, 'Opera/') !== false) {
+                return 'Opera Browser';
+            }
+            return 'Browser Client';
+        }
+
+        if (preg_match('/^([^\s;()]+)/', $userAgent, $matches)) {
+            return mb_substr(trim($matches[1]), 0, 45);
+        }
+
+        return mb_substr($userAgent, 0, 45);
     }
 
     private function getCache(string $canonicalUrl): ?string
@@ -306,18 +344,26 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         @file_put_contents($cacheFile, $content, LOCK_EX);
     }
 
+    /**
+     * Compute cache file path incorporating plugin settings hash for automatic invalidation.
+     */
     private function getCacheFilePath(string $canonicalUrl): string
     {
-        return JPATH_CACHE . '/plg_system_aimarkdown/' . hash('sha256', $canonicalUrl) . '.md';
+        $configSignature = substr(hash('sha256', (string) $this->params), 0, 8);
+        return JPATH_CACHE . '/plg_system_aimarkdown/' . hash('sha256', $canonicalUrl . '_' . $configSignature) . '.md';
     }
 
     private function convertToMarkdown(string $html, string $canonicalUrl): string
     {
+        if (!mb_check_encoding($html, 'UTF-8')) {
+            $html = mb_convert_encoding($html, 'UTF-8', mb_detect_encoding($html) ?: 'UTF-8');
+        }
+
         $htmlEncoded = mb_encode_numericentity($html, [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8');
 
         $dom = new \DOMDocument();
         libxml_use_internal_errors(true);
-        $dom->loadHTML($htmlEncoded, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        $dom->loadHTML($htmlEncoded, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR | LIBXML_NOWARNING);
         libxml_clear_errors();
 
         $xpath = new \DOMXPath($dom);
@@ -478,7 +524,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     continue;
                 }
 
-                if (!preg_match('/\.pdf(\?.*)?$/i', $href)) {
+                // Verify file extension (supporting query params and hash anchors)
+                if (!preg_match('/\.pdf([?#].*)?$/i', $href)) {
                     continue;
                 }
 
@@ -510,6 +557,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
     {
         if (preg_match('/^https?:\/\//i', $url)) {
             return $url;
+        }
+
+        // Protocol-relative URLs (e.g. //cdn.example.com/file.pdf)
+        if (str_starts_with($url, '//')) {
+            return (Uri::getInstance()->isSsl() ? 'https:' : 'http:') . $url;
         }
 
         $root = rtrim($rootUri, '/');
@@ -609,12 +661,14 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     if ($titleNode && $titleNode->parentNode) {
                         $headingWrapper = $titleNode;
                         while ($headingWrapper->parentNode && $headingWrapper->parentNode !== $item && $headingWrapper->parentNode !== $bodyNode) {
-                            $parentClass = (string) $headingWrapper->parentNode->getAttribute('class');
-                            if (stripos($parentClass, 'heading') !== false || stripos($parentClass, 'toggle') !== false) {
-                                $headingWrapper = $headingWrapper->parentNode;
-                            } else {
-                                break;
+                            if ($headingWrapper->parentNode instanceof \DOMElement) {
+                                $parentClass = (string) $headingWrapper->parentNode->getAttribute('class');
+                                if (stripos($parentClass, 'heading') !== false || stripos($parentClass, 'toggle') !== false) {
+                                    $headingWrapper = $headingWrapper->parentNode;
+                                    continue;
+                                }
                             }
+                            break;
                         }
                         if ($headingWrapper->parentNode) {
                             $headingWrapper->parentNode->removeChild($headingWrapper);
@@ -778,13 +832,14 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return '';
         }
 
+        // Build YAML frontmatter block with strict whitespace and quote escaping
         $yaml = "---\n";
         $orderedKeys = ['title', 'type', 'sku', 'brand', 'price', 'currency', 'availability', 'category', 'url'];
 
         foreach ($orderedKeys as $key) {
             if (!empty($meta[$key])) {
-                $val = trim($meta[$key]);
-                $val = str_replace('"', '\"', $val);
+                $val = trim(preg_replace('/\s+/', ' ', $meta[$key]));
+                $val = str_replace(['\\', '"'], ['\\\\', '\"'], $val);
                 $yaml .= $key . ': "' . $val . "\"\n";
             }
         }
@@ -792,7 +847,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         if (!empty($pdfUrls)) {
             $yaml .= "downloads:\n";
             foreach ($pdfUrls as $downloadUrl) {
-                $yaml .= '  - "' . str_replace('"', '\"', $downloadUrl) . "\"\n";
+                $cleanUrl = str_replace(['\\', '"'], ['\\\\', '\"'], $downloadUrl);
+                $yaml .= '  - "' . $cleanUrl . "\"\n";
             }
         }
 
