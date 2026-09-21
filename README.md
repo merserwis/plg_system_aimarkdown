@@ -118,7 +118,7 @@ Go to **System → Plugins → System - AI Markdown for Gridbox**:
 | **Settings** | **Enable YAML Frontmatter** | `Yes` | Prepends structured YAML metadata at the top of Markdown. |
 | **Settings** | **Prioritize PDF Downloads** | `Yes` | Harvests PDF datasheets and appends a dedicated `## Downloads & Documentation` section. |
 | **Settings** | **Extract Tabs & Accordions** | `Yes` | Unrolls hidden Balbooa Gridbox tabs and accordions into sequential headings. |
-| **Settings** | **Enable Markdown Cache** | `Yes` | Caches Markdown to disk, reducing response times from ~2.5s to ~15ms. |
+| **Settings** | **Enable Markdown Cache** | `Yes` | Caches Markdown to disk, reducing response times. |
 | **Settings** | **Cache Lifetime** | `24 Hours` | Expiration window before regenerating cached Markdown. |
 | **Settings** | **Custom Exclude Selectors** | *Empty* | Custom CSS selectors (`.promo`, `#chat`) or XPath queries to strip. |
 | **Analytics** | **Enable AI Analytics** | `Yes` | Logs AI crawler visits locally in the Joomla database. |
