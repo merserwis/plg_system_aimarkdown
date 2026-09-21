@@ -162,6 +162,14 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
     }
 
+    /**
+     * Send HTTP headers for Markdown response.
+     *
+     * @param string $canonicalUrl
+     * @param string $cacheStatus (HIT or MISS)
+     * @param string $markdownContent
+     * @return void
+     */
     private function sendMarkdownHeaders(string $canonicalUrl, string $cacheStatus, string $markdownContent): void
     {
         $app        = $this->getApplication();
@@ -171,7 +179,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         $app->setHeader('Content-Type', 'text/markdown; charset=utf-8', true);
         $app->setHeader('Vary', 'Accept', false);
         $app->setHeader('X-Markdown-Cache', $cacheStatus, true);
-        $app->setHeader('X-Markdown-Tokens', (string) $tokenCount, true);
+        $app->setHeader('x-markdown-tokens', (string) $tokenCount, true);
 
         if (!headers_sent()) {
             header('Content-Type: text/markdown; charset=utf-8');
@@ -179,7 +187,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             header('Link: <' . $canonicalUrl . '>; rel="canonical"; type="text/html"');
             header('Cache-Control: public, max-age=' . $cacheTtl);
             header('X-Markdown-Cache: ' . $cacheStatus);
-            header('X-Markdown-Tokens: ' . $tokenCount);
+            header('x-markdown-tokens: ' . $tokenCount);
         }
     }
 
