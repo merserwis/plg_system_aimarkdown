@@ -1,0 +1,907 @@
+<?php
+namespace Merserwis\Plugin\System\AiMarkdown\Extension;
+
+defined('_JEXEC') or die;
+
+use Joomla\CMS\Factory;
+use Joomla\CMS\Plugin\CMSPlugin;
+use Joomla\CMS\Uri\Uri;
+use Joomla\Event\SubscriberInterface;
+
+/**
+ * Main plugin class providing clean, cached Markdown negotiation with YAML Frontmatter,
+ * Tab/Accordion unrolling, PDF prioritization, and local AI bot analytics.
+ */
+final class AiMarkdown extends CMSPlugin implements SubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'onAfterInitialise' => 'onAfterInitialise',
+            'onAfterRender'      => 'onAfterRender',
+        ];
+    }
+
+    public function onAfterInitialise(): void
+    {
+        $app = $this->getApplication();
+
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $method     = $app->input->getMethod();
+        $isMarkdown = $this->isMarkdownRequested();
+
+        // 1. Standard HTML requests
+        if (!$isMarkdown) {
+            if ($method === 'HEAD') {
+                $this->sendDiscoveryHeaders();
+                $app->close();
+            }
+            return;
+        }
+
+        // 2. Markdown requests: Check cache if enabled
+        if (!(bool) $this->params->get('enable_cache', 1)) {
+            return;
+        }
+
+        $canonicalUrl   = $this->getCleanCanonicalUrl();
+        $cachedMarkdown = $this->getCache($canonicalUrl);
+
+        // CACHE HIT: Serve cached Markdown in ~15ms
+        if ($cachedMarkdown !== null) {
+            $this->logAiVisit($canonicalUrl, 1);
+            $this->sendMarkdownHeaders($canonicalUrl, 'HIT', $cachedMarkdown);
+
+            if ($method !== 'HEAD') {
+                echo $cachedMarkdown;
+            }
+
+            $app->close();
+        }
+    }
+
+    public function onAfterRender(): void
+    {
+        $app = $this->getApplication();
+
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $method        = $app->input->getMethod();
+        $canonicalUrl  = $this->getCleanCanonicalUrl();
+        $alternateUrl  = $canonicalUrl . '?output=markdown';
+        $showAlternate = (bool) $this->params->get('show_alternate_link', 1);
+
+        // 1. Standard HTML response
+        if (!$this->isMarkdownRequested()) {
+            $app->setHeader('Vary', 'Accept', false);
+
+            if ($showAlternate) {
+                $this->sendDiscoveryHeaders();
+
+                $body = $app->getBody();
+                if (stripos($body, '</head>') !== false) {
+                    $linkTag = '    <link rel="alternate" type="text/markdown" href="' . htmlspecialchars($alternateUrl, ENT_QUOTES, 'UTF-8') . '">' . "\n";
+                    $body = str_replace('</head>', $linkTag . '</head>', $body);
+                    $app->setBody($body);
+                }
+            }
+            return;
+        }
+
+        $html = $app->getBody();
+        if (empty($html)) {
+            return;
+        }
+
+        // 2. Convert generated HTML into clean Markdown
+        $markdown = $this->convertToMarkdown($html, $canonicalUrl);
+
+        // 3. Save to cache
+        if ((bool) $this->params->get('enable_cache', 1)) {
+            $this->setCache($canonicalUrl, $markdown);
+        }
+
+        // 4. Log Cache MISS
+        $this->logAiVisit($canonicalUrl, 0);
+
+        // 5. Send HTTP headers and flush output
+        $this->sendMarkdownHeaders($canonicalUrl, 'MISS', $markdown);
+
+        if ($method !== 'HEAD') {
+            echo $markdown;
+        }
+
+        $app->close();
+    }
+
+    private function isMarkdownRequested(): bool
+    {
+        $app = $this->getApplication();
+        $accept = $app->input->server->getString('HTTP_ACCEPT', '');
+        $output = $app->input->get('output', '', 'cmd');
+        $test   = $app->input->get('markdown', '', 'cmd');
+
+        return (
+            stripos($accept, 'text/markdown') !== false ||
+            $output === 'markdown' ||
+            $test === '1'
+        );
+    }
+
+    private function getCleanCanonicalUrl(): string
+    {
+        $currentUri = Uri::getInstance();
+        $canonical  = $currentUri->toString(['scheme', 'host', 'port', 'path']);
+
+        return str_replace(["\r", "\n"], '', $canonical);
+    }
+
+    private function sendDiscoveryHeaders(): void
+    {
+        $app          = $this->getApplication();
+        $canonicalUrl = $this->getCleanCanonicalUrl();
+        $rootUri      = Uri::root();
+        $alternateUrl = $canonicalUrl . '?output=markdown';
+
+        $linkHeaders = [
+            '<' . $alternateUrl . '>; rel="alternate"; type="text/markdown"',
+            '<' . $rootUri . 'kontakt>; rel="service-doc"',
+            '<' . $rootUri . 'robots.txt>; rel="describedby"'
+        ];
+        $linkHeaderValue = implode(', ', $linkHeaders);
+
+        $app->setHeader('Link', $linkHeaderValue, false);
+        if (!headers_sent()) {
+            header('Link: ' . $linkHeaderValue, false);
+            header('Vary: Accept');
+        }
+    }
+
+    private function sendMarkdownHeaders(string $canonicalUrl, string $cacheStatus, string $markdownContent): void
+    {
+        $app        = $this->getApplication();
+        $cacheTtl   = (int) $this->params->get('cache_time', 86400);
+        $tokenCount = (int) ceil(mb_strlen($markdownContent) / 4);
+
+        $app->setHeader('Content-Type', 'text/markdown; charset=utf-8', true);
+        $app->setHeader('Vary', 'Accept', false);
+        $app->setHeader('X-Markdown-Cache', $cacheStatus, true);
+        $app->setHeader('X-Markdown-Tokens', (string) $tokenCount, true);
+
+        if (!headers_sent()) {
+            header('Content-Type: text/markdown; charset=utf-8');
+            header('Vary: Accept');
+            header('Link: <' . $canonicalUrl . '>; rel="canonical"; type="text/html"');
+            header('Cache-Control: public, max-age=' . $cacheTtl);
+            header('X-Markdown-Cache: ' . $cacheStatus);
+            header('X-Markdown-Tokens: ' . $tokenCount);
+        }
+    }
+
+    /**
+     * Log AI visit locally to Joomla database.
+     */
+    private function logAiVisit(string $url, int $isCacheHit): void
+    {
+        if (!(bool) $this->params->get('enable_analytics', 1)) {
+            return;
+        }
+
+        try {
+            $app = $this->getApplication();
+            $userAgent = $app->input->server->getString('HTTP_USER_AGENT', '');
+            $botName = $this->detectAiBot($userAgent);
+
+            // Anonymize IP (mask last octet for privacy)
+            $rawIp = $app->input->server->getString('REMOTE_ADDR', '');
+            $maskedIp = preg_replace(['/\.\d+$/', '/:[0-9a-fA-F]+$/'], ['.xxx', ':xxxx'], $rawIp) ?: 'Unknown';
+
+            $db = Factory::getDbo();
+            $query = $db->getQuery(true)
+                ->insert($db->quoteName('#__aimarkdown_logs'))
+                ->columns([
+                    $db->quoteName('bot_name'),
+                    $db->quoteName('url'),
+                    $db->quoteName('ip_address'),
+                    $db->quoteName('user_agent'),
+                    $db->quoteName('is_cache_hit'),
+                    $db->quoteName('created_at')
+                ])
+                ->values(implode(',', [
+                    $db->quote($botName),
+                    $db->quote($url),
+                    $db->quote($maskedIp),
+                    $db->quote(substr($userAgent, 0, 500)),
+                    $isCacheHit,
+                    'NOW()'
+                ]));
+            $db->setQuery($query);
+            $db->execute();
+
+            // Prune old logs occasionally (1% chance per request)
+            if (random_int(1, 100) === 1) {
+                $days = (int) $this->params->get('log_retention_days', 30);
+                $pruneQuery = $db->getQuery(true)
+                    ->delete($db->quoteName('#__aimarkdown_logs'))
+                    ->where($db->quoteName('created_at') . ' < DATE_SUB(NOW(), INTERVAL ' . $days . ' DAY)');
+                $db->setQuery($pruneQuery);
+                $db->execute();
+            }
+        } catch (\Throwable $e) {
+            // Silently catch logging errors
+        }
+    }
+
+    /**
+     * Identify AI bot name based on User-Agent.
+     */
+    private function detectAiBot(string $userAgent): string
+    {
+        $bots = [
+            'ChatGPT-User'        => 'ChatGPT Search',
+            'GPTBot'              => 'OpenAI GPTBot',
+            'ClaudeBot'           => 'Anthropic ClaudeBot',
+            'Claude-Web'          => 'Anthropic Claude Web',
+            'anthropic-ai'        => 'Anthropic AI',
+            'PerplexityBot'       => 'Perplexity AI',
+            'Google-Extended'     => 'Google Gemini',
+            'Applebot-Extended'   => 'Apple Intelligence',
+            'Meta-ExternalAgent'  => 'Meta AI',
+            'FacebookBot'         => 'Meta FacebookBot',
+            'Bytespider'          => 'ByteDance AI',
+            'Amazonbot'           => 'Amazon AI',
+            'cohere-ai'           => 'Cohere AI',
+            'Diffbot'             => 'Diffbot',
+            'CCBot'               => 'Common Crawl',
+            'isitagentready'      => 'Cloudflare Agent Ready Audit',
+        ];
+
+        foreach ($bots as $pattern => $name) {
+            if (stripos($userAgent, $pattern) !== false) {
+                return $name;
+            }
+        }
+
+        return 'Other AI / Custom Client';
+    }
+
+    private function getCache(string $canonicalUrl): ?string
+    {
+        $cacheFile = $this->getCacheFilePath($canonicalUrl);
+        $cacheTtl  = (int) $this->params->get('cache_time', 86400);
+
+        if (is_file($cacheFile)) {
+            $fileAge = time() - filemtime($cacheFile);
+            if ($fileAge < $cacheTtl) {
+                $content = file_get_contents($cacheFile);
+                return ($content !== false) ? $content : null;
+            }
+        }
+
+        return null;
+    }
+
+    private function setCache(string $canonicalUrl, string $content): void
+    {
+        $cacheDir = JPATH_CACHE . '/plg_system_aimarkdown';
+
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0755, true);
+        }
+
+        $cacheFile = $this->getCacheFilePath($canonicalUrl);
+        @file_put_contents($cacheFile, $content, LOCK_EX);
+    }
+
+    private function getCacheFilePath(string $canonicalUrl): string
+    {
+        return JPATH_CACHE . '/plg_system_aimarkdown/' . hash('sha256', $canonicalUrl) . '.md';
+    }
+
+    private function convertToMarkdown(string $html, string $canonicalUrl): string
+    {
+        $htmlEncoded = mb_encode_numericentity($html, [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8');
+
+        $dom = new \DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML($htmlEncoded, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+
+        $xpath = new \DOMXPath($dom);
+        $rootUri = Uri::root();
+
+        // 1. Extract universal PDF downloads
+        $pdfDownloads = [];
+        if ((bool) $this->params->get('prioritize_pdfs', 1)) {
+            $pdfDownloads = $this->extractPdfDownloads($xpath, $rootUri);
+        }
+
+        // 2. Extract YAML Frontmatter
+        $yamlFrontmatter = '';
+        if ((bool) $this->params->get('enable_frontmatter', 1)) {
+            $yamlFrontmatter = $this->buildYamlFrontmatter($xpath, $canonicalUrl, array_keys($pdfDownloads));
+        }
+
+        // 3. Unroll Balbooa Gridbox Tabs & Accordions
+        if ((bool) $this->params->get('unroll_tabs_accordions', 1)) {
+            $this->unrollGridboxTabs($xpath, $dom);
+            $this->unrollGridboxAccordions($xpath, $dom);
+        }
+
+        // 4. Default layout wrappers, forms, and scripts to remove
+        $trash = [
+            '//script',
+            '//style',
+            '//link',
+            '//noscript',
+            '//svg',
+            '//iframe',
+            '//form',
+            '//header',
+            '//footer',
+            '//nav',
+            '//*[contains(@class, "ba-header")]',
+            '//*[contains(@class, "ba-footer")]',
+            '//*[contains(@class, "ba-sticky-header")]',
+            '//*[contains(@class, "ba-cart-modal")]',
+            '//*[contains(@class, "com-baforms-wrapper")]',
+            '//*[contains(@class, "cookie")]',
+            '//*[contains(@class, "modal")]'
+        ];
+
+        // 5. User-defined custom exclude selectors
+        $customSelectors = (string) $this->params->get('custom_exclude_selectors', '');
+        if (!empty(trim($customSelectors))) {
+            $lines = preg_split('/\r\n|\r|\n/', $customSelectors);
+            if ($lines) {
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '') {
+                        continue;
+                    }
+                    $xpathQuery = $this->convertCssToXPath($line);
+                    if (!empty($xpathQuery)) {
+                        $trash[] = $xpathQuery;
+                    }
+                }
+            }
+        }
+
+        // 6. Balbooa Gridbox optional toggles
+        if (!$this->params->get('show_category', 1)) {
+            $trash[] = '//*[contains(@class, "ba-item-tags-and-pd-category")]//*[contains(@class, "category")]';
+            $trash[] = '//*[contains(@class, "ba-blog-post-category")]';
+            $trash[] = '//*[contains(@class, "ba-item-category")]';
+            $trash[] = '//*[contains(@class, "ba-item-breadcrumb")]';
+        }
+
+        if (!$this->params->get('show_tags', 0)) {
+            $trash[] = '//*[contains(@class, "ba-item-tags")]';
+            $trash[] = '//*[contains(@class, "ba-blog-post-tags")]';
+        }
+
+        if (!$this->params->get('show_author', 0)) {
+            $trash[] = '//*[contains(@class, "ba-item-post-author")]';
+            $trash[] = '//*[contains(@class, "ba-blog-post-author")]';
+            $trash[] = '//*[contains(@class, "ba-author")]';
+        }
+
+        if (!$this->params->get('show_date', 1)) {
+            $trash[] = '//*[contains(@class, "ba-item-post-date")]';
+            $trash[] = '//*[contains(@class, "ba-blog-post-date")]';
+            $trash[] = '//time';
+        }
+
+        if (!$this->params->get('show_description', 1)) {
+            $trash[] = '//*[contains(@class, "ba-item-product-description")]';
+            $trash[] = '//*[contains(@class, "ba-item-intro-text")]';
+        }
+
+        if (!$this->params->get('show_custom_fields', 1)) {
+            $trash[] = '//*[contains(@class, "ba-item-product-fields")]';
+            $trash[] = '//*[contains(@class, "ba-custom-fields")]';
+        }
+
+        foreach ($trash as $query) {
+            try {
+                $nodes = $xpath->query($query);
+                if ($nodes) {
+                    $toRemove = [];
+                    foreach ($nodes as $n) {
+                        $toRemove[] = $n;
+                    }
+                    foreach ($toRemove as $n) {
+                        if ($n->parentNode) {
+                            $n->parentNode->removeChild($n);
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Silently ignore malformed custom XPath expressions
+            }
+        }
+
+        $content = $xpath->query('//div[contains(@class, "ba-gridbox-page")]')->item(0);
+        if (!$content) {
+            $content = $xpath->query('//main')->item(0) ?: $xpath->query('//body')->item(0);
+        }
+
+        if (!$content) {
+            return '';
+        }
+
+        $md = $this->parseNode($content);
+        $md = strip_tags($md);
+        $md = preg_replace('/[ \t]+$/m', '', $md);
+        $md = preg_replace('/\n{3,}/', "\n\n", $md);
+        $md = trim($md);
+
+        // 7. Append prioritized PDF downloads
+        if (!empty($pdfDownloads)) {
+            $pdfSection = "\n\n## Downloads & Documentation\n";
+            foreach ($pdfDownloads as $pdfUrl => $pdfTitle) {
+                $pdfSection .= "* [" . $pdfTitle . "](" . $pdfUrl . ")\n";
+            }
+            $md .= $pdfSection;
+        }
+
+        // 8. Prepend YAML Frontmatter
+        if (!empty($yamlFrontmatter)) {
+            $md = $yamlFrontmatter . "\n\n" . $md;
+        }
+
+        return trim($md);
+    }
+
+    private function extractPdfDownloads(\DOMXPath $xpath, string $rootUri): array
+    {
+        $pdfLinks = [];
+        $links = $xpath->query('//a[contains(translate(@href, "PDF", "pdf"), ".pdf")]');
+
+        if ($links) {
+            foreach ($links as $link) {
+                $href = trim($link->getAttribute('href'));
+                if (empty($href) || str_starts_with($href, '#') || str_starts_with($href, 'javascript:')) {
+                    continue;
+                }
+
+                if (!preg_match('/\.pdf(\?.*)?$/i', $href)) {
+                    continue;
+                }
+
+                $absoluteUrl = $this->toAbsoluteUrl($href, $rootUri);
+
+                $title = trim(preg_replace('/\s+/', ' ', $link->textContent));
+                if (empty($title)) {
+                    $title = trim($link->getAttribute('title') ?: $link->getAttribute('aria-label'));
+                }
+                if (empty($title)) {
+                    $filename = basename(parse_url($href, PHP_URL_PATH) ?? '');
+                    $title = !empty($filename) ? urldecode(pathinfo($filename, PATHINFO_FILENAME)) : 'Download File';
+                }
+
+                if (stripos($title, 'pdf') === false) {
+                    $title .= ' (PDF)';
+                }
+
+                if (!isset($pdfLinks[$absoluteUrl])) {
+                    $pdfLinks[$absoluteUrl] = $title;
+                }
+            }
+        }
+
+        return $pdfLinks;
+    }
+
+    private function toAbsoluteUrl(string $url, string $rootUri): string
+    {
+        if (preg_match('/^https?:\/\//i', $url)) {
+            return $url;
+        }
+
+        $root = rtrim($rootUri, '/');
+        $path = ltrim($url, '/');
+
+        return $root . '/' . $path;
+    }
+
+    private function unrollGridboxTabs(\DOMXPath $xpath, \DOMDocument $dom): void
+    {
+        $tabsContainers = $xpath->query('//*[contains(@class, "ba-item-tabs")]|//*[contains(@class, "ba-tabs-wrapper")]');
+        if (!$tabsContainers) {
+            return;
+        }
+
+        foreach ($tabsContainers as $container) {
+            $navLinks = $xpath->query('.//ul[contains(@class, "nav-tabs")]//a|.//ul[contains(@class, "ba-tabs-wrapper")]//a', $container);
+            $titlesById = [];
+            $titlesByIndex = [];
+            $idx = 0;
+
+            if ($navLinks) {
+                foreach ($navLinks as $link) {
+                    $href  = trim($link->getAttribute('href'));
+                    $title = trim(preg_replace('/\s+/', ' ', $link->textContent));
+
+                    if (!empty($title)) {
+                        if (!empty($href) && str_starts_with($href, '#')) {
+                            $targetId = ltrim($href, '#');
+                            $titlesById[$targetId] = $title;
+                        }
+                        $titlesByIndex[$idx] = $title;
+                        $idx++;
+                    }
+                }
+            }
+
+            $panes = $xpath->query('.//*[contains(@class, "tab-pane")]|.*//*[contains(@class, "ba-tab-pane")]', $container);
+            if ($panes) {
+                $paneIdx = 0;
+                foreach ($panes as $pane) {
+                    $paneId    = $pane->getAttribute('id');
+                    $paneTitle = $titlesById[$paneId] ?? ($titlesByIndex[$paneIdx] ?? '');
+
+                    if (!empty($paneTitle)) {
+                        $h3 = $dom->createElement('h3', htmlspecialchars($paneTitle, ENT_QUOTES, 'UTF-8'));
+                        if ($pane->firstChild) {
+                            $pane->insertBefore($h3, $pane->firstChild);
+                        } else {
+                            $pane->appendChild($h3);
+                        }
+                    }
+                    $paneIdx++;
+                }
+            }
+
+            $navBars = $xpath->query('.//ul[contains(@class, "nav-tabs")]', $container);
+            if ($navBars) {
+                foreach ($navBars as $nav) {
+                    if ($nav->parentNode) {
+                        $nav->parentNode->removeChild($nav);
+                    }
+                }
+            }
+        }
+    }
+
+    private function unrollGridboxAccordions(\DOMXPath $xpath, \DOMDocument $dom): void
+    {
+        $accordions = $xpath->query('//*[contains(@class, "ba-item-accordion")]|//*[contains(@class, "ba-accordion-wrapper")]');
+        if (!$accordions) {
+            return;
+        }
+
+        foreach ($accordions as $accordion) {
+            $items = $xpath->query('.//*[contains(@class, "accordion-group")]|.*//*[contains(@class, "ba-accordion-item")]|.*//*[contains(@class, "ba-accordion-panel")]', $accordion);
+
+            if ($items && $items->length > 0) {
+                foreach ($items as $item) {
+                    $titleNode = $xpath->query('.//*[contains(@class, "ba-accordion-title")]|.*//*[contains(@class, "accordion-title")]|.*//*[contains(@class, "accordion-toggle")]|.*//*[contains(@class, "accordion-heading")]', $item)->item(0);
+                    $titleText = '';
+                    if ($titleNode) {
+                        $titleText = trim(preg_replace('/\s+/', ' ', $titleNode->textContent));
+                    }
+
+                    $bodyNode = $xpath->query('.//*[contains(@class, "accordion-body")]|.*//*[contains(@class, "ba-accordion-body")]|.*//*[contains(@class, "accordion-inner")]', $item)->item(0);
+
+                    if (!empty($titleText)) {
+                        $h3 = $dom->createElement('h3', htmlspecialchars($titleText, ENT_QUOTES, 'UTF-8'));
+                        if ($bodyNode && $bodyNode->firstChild) {
+                            $bodyNode->insertBefore($h3, $bodyNode->firstChild);
+                        } else {
+                            $item->insertBefore($h3, $item->firstChild);
+                        }
+                    }
+
+                    if ($titleNode && $titleNode->parentNode) {
+                        $headingWrapper = $titleNode;
+                        while ($headingWrapper->parentNode && $headingWrapper->parentNode !== $item && $headingWrapper->parentNode !== $bodyNode) {
+                            $parentClass = (string) $headingWrapper->parentNode->getAttribute('class');
+                            if (stripos($parentClass, 'heading') !== false || stripos($parentClass, 'toggle') !== false) {
+                                $headingWrapper = $headingWrapper->parentNode;
+                            } else {
+                                break;
+                            }
+                        }
+                        if ($headingWrapper->parentNode) {
+                            $headingWrapper->parentNode->removeChild($headingWrapper);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private function convertCssToXPath(string $selector): string
+    {
+        $selector = trim($selector);
+        if (empty($selector)) {
+            return '';
+        }
+
+        if (str_starts_with($selector, '/') || str_starts_with($selector, './')) {
+            return $selector;
+        }
+
+        if (preg_match('/^#([a-zA-Z0-9_-]+)$/', $selector, $matches)) {
+            return "//*[@id='{$matches[1]}']";
+        }
+
+        if (preg_match('/^\.([a-zA-Z0-9_-]+)$/', $selector, $matches)) {
+            return "//*[contains(@class, '{$matches[1]}')]";
+        }
+
+        if (preg_match('/^([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)$/', $selector, $matches)) {
+            return "//{$matches[1]}[contains(@class, '{$matches[2]}')]";
+        }
+
+        if (preg_match('/^([a-zA-Z0-9_-]+)#([a-zA-Z0-9_-]+)$/', $selector, $matches)) {
+            return "//{$matches[1]}[@id='{$matches[2]}']";
+        }
+
+        if (preg_match('/^[a-zA-Z0-9_-]+$/', $selector)) {
+            return "//{$selector}";
+        }
+
+        return "//*[contains(@class, '{$selector}')]";
+    }
+
+    private function buildYamlFrontmatter(\DOMXPath $xpath, string $canonicalUrl, array $pdfUrls = []): string
+    {
+        $meta = [
+            'url' => $canonicalUrl,
+        ];
+        $isProduct = false;
+
+        $jsonScripts = $xpath->query('//script[@type="application/ld+json"]');
+        if ($jsonScripts) {
+            foreach ($jsonScripts as $scriptNode) {
+                $rawJson = trim($scriptNode->nodeValue ?? '');
+                if (empty($rawJson)) {
+                    continue;
+                }
+
+                $data = json_decode($rawJson, true);
+                if (!is_array($data)) {
+                    continue;
+                }
+
+                $items = isset($data['@graph']) && is_array($data['@graph']) ? $data['@graph'] : [$data];
+
+                foreach ($items as $item) {
+                    if (!isset($item['@type'])) {
+                        continue;
+                    }
+
+                    $type = is_array($item['@type']) ? $item['@type'] : [$item['@type']];
+                    if (in_array('Product', $type, true)) {
+                        $isProduct = true;
+
+                        if (!empty($item['name'])) {
+                            $meta['title'] = (string) $item['name'];
+                        }
+                        if (!empty($item['sku'])) {
+                            $meta['sku'] = (string) $item['sku'];
+                        }
+                        if (!empty($item['brand'])) {
+                            $meta['brand'] = is_array($item['brand']) ? ($item['brand']['name'] ?? '') : (string) $item['brand'];
+                        }
+                        if (!empty($item['category'])) {
+                            $meta['category'] = (string) $item['category'];
+                        }
+                        if (!empty($item['offers'])) {
+                            $offers = is_array($item['offers']) && isset($item['offers'][0]) ? $item['offers'][0] : $item['offers'];
+                            if (is_array($offers)) {
+                                if (isset($offers['price'])) {
+                                    $meta['price'] = (string) $offers['price'];
+                                }
+                                if (isset($offers['priceCurrency'])) {
+                                    $meta['currency'] = (string) $offers['priceCurrency'];
+                                }
+                                if (isset($offers['availability'])) {
+                                    $avail = (string) $offers['availability'];
+                                    $meta['availability'] = str_replace('https://schema.org/', '', $avail);
+                                }
+                            }
+                        }
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if (empty($meta['title'])) {
+            $titleNode = $xpath->query('//*[contains(@class, "ba-item-product-title")]//h1|//h1')->item(0);
+            if ($titleNode) {
+                $meta['title'] = trim(preg_replace('/\s+/', ' ', $titleNode->textContent));
+            }
+        }
+
+        if (empty($meta['price'])) {
+            $priceNode = $xpath->query('//*[contains(@class, "ba-item-product-price")]|//*[contains(@class, "ba-product-price")]')->item(0);
+            if ($priceNode) {
+                $priceText = trim(preg_replace('/\s+/', ' ', $priceNode->textContent));
+                if (!empty($priceText)) {
+                    $meta['price'] = $priceText;
+                    $isProduct = true;
+                }
+            }
+        }
+
+        if (empty($meta['sku'])) {
+            $skuNode = $xpath->query('//*[contains(@class, "ba-item-product-sku")]|//*[contains(@class, "ba-sku-value")]')->item(0);
+            if ($skuNode) {
+                $skuText = trim(preg_replace('/\s+/', ' ', $skuNode->textContent));
+                if (!empty($skuText)) {
+                    $meta['sku'] = trim(str_ireplace(['sku:', 'kod:'], '', $skuText));
+                    $isProduct = true;
+                }
+            }
+        }
+
+        if (empty($meta['category'])) {
+            $catNode = $xpath->query('//*[contains(@class, "ba-item-tags-and-pd-category")]//*[contains(@class, "category")]|//*[contains(@class, "ba-blog-post-category")]')->item(0);
+            if ($catNode) {
+                $meta['category'] = trim(preg_replace('/\s+/', ' ', $catNode->textContent));
+            }
+        }
+
+        if (empty($meta['availability'])) {
+            $stockNode = $xpath->query('//*[contains(@class, "ba-item-product-stock")]|//*[contains(@class, "ba-stock-value")]')->item(0);
+            if ($stockNode) {
+                $stockText = trim(preg_replace('/\s+/', ' ', $stockNode->textContent));
+                if (!empty($stockText)) {
+                    $meta['availability'] = $stockText;
+                    $isProduct = true;
+                }
+            }
+        }
+
+        if ($isProduct) {
+            $meta['type'] = 'product';
+        }
+
+        if (empty($meta['title']) && !$isProduct) {
+            return '';
+        }
+
+        $yaml = "---\n";
+        $orderedKeys = ['title', 'type', 'sku', 'brand', 'price', 'currency', 'availability', 'category', 'url'];
+
+        foreach ($orderedKeys as $key) {
+            if (!empty($meta[$key])) {
+                $val = trim($meta[$key]);
+                $val = str_replace('"', '\"', $val);
+                $yaml .= $key . ': "' . $val . "\"\n";
+            }
+        }
+
+        if (!empty($pdfUrls)) {
+            $yaml .= "downloads:\n";
+            foreach ($pdfUrls as $downloadUrl) {
+                $yaml .= '  - "' . str_replace('"', '\"', $downloadUrl) . "\"\n";
+            }
+        }
+
+        $yaml .= "---";
+
+        return $yaml;
+    }
+
+    private function parseNode(\DOMNode $node): string
+    {
+        if ($node->nodeType === XML_TEXT_NODE) {
+            return preg_replace('/\s+/', ' ', $node->nodeValue);
+        }
+
+        if ($node->nodeType !== XML_ELEMENT_NODE) {
+            return '';
+        }
+
+        $tag = strtolower($node->nodeName);
+
+        if ($tag === 'table') {
+            return "\n\n" . $this->parseTable($node) . "\n\n";
+        }
+
+        $inner = '';
+        foreach ($node->childNodes as $child) {
+            $inner .= $this->parseNode($child);
+        }
+        $inner = trim($inner);
+
+        switch ($tag) {
+            case 'h1':
+                return "\n\n# " . $inner . "\n\n";
+            case 'h2':
+                return "\n\n## " . $inner . "\n\n";
+            case 'h3':
+                return "\n\n### " . $inner . "\n\n";
+            case 'h4':
+                return "\n\n#### " . $inner . "\n\n";
+            case 'h5':
+            case 'h6':
+                return "\n\n##### " . $inner . "\n\n";
+            case 'p':
+                return $inner !== '' ? "\n\n" . $inner . "\n\n" : '';
+            case 'strong':
+            case 'b':
+                return $inner !== '' ? " **" . $inner . "** " : '';
+            case 'em':
+            case 'i':
+                return $inner !== '' ? " *" . $inner . "* " : '';
+            case 'a':
+                $href = $node->getAttribute('href');
+                if (!empty($href) && strpos($href, 'javascript:') === false && strpos($href, '#') !== 0 && $inner !== '') {
+                    return ' [' . $inner . '](' . $href . ') ';
+                }
+                return ' ' . $inner . ' ';
+            case 'li':
+                return "\n* " . $inner;
+            case 'ul':
+            case 'ol':
+                return "\n\n" . $inner . "\n\n";
+            case 'br':
+                return "\n";
+            case 'hr':
+                return "\n\n---\n\n";
+            case 'blockquote':
+                return "\n\n> " . str_replace("\n", "\n> ", $inner) . "\n\n";
+            case 'img':
+                if (!$this->params->get('show_images', 1)) {
+                    return '';
+                }
+                $alt = $node->getAttribute('alt');
+                $src = $node->getAttribute('src');
+                return !empty($src) ? "\n![" . $alt . "](" . $src . ")\n" : '';
+            default:
+                return ' ' . $inner . ' ';
+        }
+    }
+
+    private function parseTable(\DOMNode $table): string
+    {
+        $rows = [];
+        $maxCols = 0;
+
+        foreach ($table->getElementsByTagName('tr') as $tr) {
+            $row = [];
+            foreach ($tr->childNodes as $cell) {
+                if ($cell->nodeType === XML_ELEMENT_NODE && in_array(strtolower($cell->nodeName), ['th', 'td'])) {
+                    $cellText = trim(preg_replace('/\s+/', ' ', $cell->textContent));
+                    $cellText = str_replace('|', '\|', $cellText);
+                    $row[] = $cellText;
+                }
+            }
+            if (!empty($row)) {
+                $maxCols = max($maxCols, count($row));
+                $rows[] = $row;
+            }
+        }
+
+        if (empty($rows)) {
+            return '';
+        }
+
+        $output = "\n";
+        $headerCreated = false;
+
+        foreach ($rows as $row) {
+            while (count($row) < $maxCols) {
+                $row[] = '';
+            }
+            $output .= '| ' . implode(' | ', $row) . " |\n";
+            if (!$headerCreated) {
+                $output .= '| ' . implode(' | ', array_fill(0, $maxCols, '---')) . " |\n";
+                $headerCreated = true;
+            }
+        }
+
+        return $output . "\n";
+    }
+}
