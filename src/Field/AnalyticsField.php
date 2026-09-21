@@ -20,6 +20,11 @@ class AnalyticsField extends FormField
         $app = Factory::getApplication();
         $db  = Factory::getDbo();
 
+        // Security check: ensure only authorized administrators can view / clear logs
+        if (!$app->getIdentity()->authorise('core.edit', 'com_plugins')) {
+            return '';
+        }
+
         // 1. Verify database table exists
         $tables = $db->getTableList();
         $tableName = $db->replacePrefix('#__aimarkdown_logs');
@@ -29,7 +34,7 @@ class AnalyticsField extends FormField
 
         $extensionId = (int) $app->input->get('extension_id', 0);
 
-        // 2. Handle Clear Statistics Action (CSRF Protected)
+        // 2. Handle Clear Statistics Action (CSRF & Permission Protected)
         if ($app->input->get('action') === 'clear_ai_logs' && Session::checkToken('get')) {
             try {
                 $db->setQuery('TRUNCATE TABLE ' . $db->quoteName('#__aimarkdown_logs'))->execute();
@@ -179,9 +184,9 @@ class AnalyticsField extends FormField
                         <ul class="list-group list-group-flush">
                             <?php foreach ($topPages as $page): ?>
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                    <span class="text-truncate me-2 small" style="max-width: 80%;" title="<?php echo htmlspecialchars($page['url']); ?>">
+                                    <a href="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-truncate me-2 small text-decoration-none" style="max-width: 80%;" title="<?php echo htmlspecialchars($page['url']); ?>">
                                         <?php echo htmlspecialchars($page['url']); ?>
-                                    </span>
+                                    </a>
                                     <span class="badge bg-secondary rounded-pill"><?php echo $page['count']; ?></span>
                                 </li>
                             <?php endforeach; ?>
@@ -209,8 +214,10 @@ class AnalyticsField extends FormField
                                 <tr>
                                     <td><?php echo htmlspecialchars($log['created_at']); ?></td>
                                     <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($log['bot_name']); ?></span></td>
-                                    <td class="text-truncate" style="max-width: 250px;" title="<?php echo htmlspecialchars($log['url']); ?>">
-                                        <?php echo htmlspecialchars($log['url']); ?>
+                                    <td class="text-truncate" style="max-width: 250px;">
+                                        <a href="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="<?php echo htmlspecialchars($log['url']); ?>">
+                                            <?php echo htmlspecialchars($log['url']); ?>
+                                        </a>
                                     </td>
                                     <td>
                                         <?php if ((int) $log['is_cache_hit'] === 1): ?>

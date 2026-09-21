@@ -7,7 +7,7 @@
     <creationDate>2026-09-21</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.3.2</version>
+    <version>1.3.3</version>
     <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with high-performance caching, YAML Frontmatter, tab/accordion unrolling, PDF prioritization, and local AI analytics.</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
