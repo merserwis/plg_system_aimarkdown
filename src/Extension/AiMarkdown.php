@@ -26,6 +26,29 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
     {
         $app = $this->getApplication();
 
+        // 1. Handle Admin AJAX action to clear AI analytics logs
+        if ($app->isClient('administrator')) {
+            if ($app->input->get('aimarkdown_action') === 'clear_logs') {
+                if ($app->getIdentity()->authorise('core.edit', 'com_plugins') && \Joomla\CMS\Session\Session::checkToken('request')) {
+                    $db = Factory::getDbo();
+                    try {
+                        $db->setQuery('TRUNCATE TABLE ' . $db->quoteName('#__aimarkdown_logs'))->execute();
+                    } catch (\Throwable $e) {
+                        $db->setQuery('DELETE FROM ' . $db->quoteName('#__aimarkdown_logs'))->execute();
+                    }
+
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['success' => true]);
+                    $app->close();
+                }
+
+                header('Content-Type: application/json; charset=utf-8', true, 403);
+                echo json_encode(['success' => false, 'message' => 'Unauthorized or invalid token']);
+                $app->close();
+            }
+            return;
+        }
+
         if (!$app->isClient('site')) {
             return;
         }
@@ -33,7 +56,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         $method     = $app->input->getMethod();
         $isMarkdown = $this->isMarkdownRequested();
 
-        // 1. Standard HTML requests
+        // 2. Standard HTML requests
         if (!$isMarkdown) {
             if ($method === 'HEAD' && (bool) $this->params->get('show_alternate_link', 1)) {
                 $this->sendDiscoveryHeaders();
@@ -42,7 +65,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // 2. Markdown requests: Check cache if enabled
+        // 3. Markdown requests: Check cache if enabled
         if (!(bool) $this->params->get('enable_cache', 1)) {
             return;
         }

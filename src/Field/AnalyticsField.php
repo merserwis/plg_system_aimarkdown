@@ -5,7 +5,6 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Form\FormField;
-use Joomla\CMS\Router\Route;
 use Joomla\CMS\Session\Session;
 
 /**
@@ -20,7 +19,7 @@ class AnalyticsField extends FormField
         $app = Factory::getApplication();
         $db  = Factory::getDbo();
 
-        // Security check: ensure only authorized administrators can view / clear logs
+        // Security check
         if (!$app->getIdentity()->authorise('core.edit', 'com_plugins')) {
             return '';
         }
@@ -32,35 +31,19 @@ class AnalyticsField extends FormField
             return '<div class="alert alert-info">Analytics table not yet created. Re-save or re-install plugin to initialize.</div>';
         }
 
-        $extensionId = (int) $app->input->get('extension_id', 0);
-
-        // 2. Handle Clear Statistics Action (CSRF & Permission Protected)
-        if ($app->input->get('action') === 'clear_ai_logs' && Session::checkToken('get')) {
-            try {
-                $db->setQuery('TRUNCATE TABLE ' . $db->quoteName('#__aimarkdown_logs'))->execute();
-            } catch (\Throwable $e) {
-                $db->setQuery('DELETE FROM ' . $db->quoteName('#__aimarkdown_logs'))->execute();
-            }
-
-            $app->enqueueMessage('AI visit statistics have been cleared successfully.', 'message');
-            $app->redirect(Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $extensionId, false));
-        }
-
-        // 3. Determine display limit (5, 10, 15, 30) from plugin params
+        // 2. Determine display limit (5, 10, 15, 30) from plugin params
         $displayLimit = (int) $this->form->getValue('analytics_display_limit', 'params', 10);
         if (!in_array($displayLimit, [5, 10, 15, 30], true)) {
             $displayLimit = 10;
         }
 
-        // 4. Total visits in the last 30 days
+        // 3. Total visits in the last 30 days
         $query = $db->getQuery(true)
             ->select('COUNT(*)')
             ->from($db->quoteName('#__aimarkdown_logs'))
             ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
         $db->setQuery($query);
         $totalVisits = (int) $db->loadResult();
-
-        $clearUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $extensionId . '&action=clear_ai_logs&' . Session::getFormToken() . '=1');
 
         if ($totalVisits === 0) {
             return '<div class="alert alert-info my-3">
@@ -69,7 +52,7 @@ class AnalyticsField extends FormField
             </div>';
         }
 
-        // 5. Cache Hit Rate
+        // 4. Cache Hit Rate
         $query = $db->getQuery(true)
             ->select('COUNT(*)')
             ->from($db->quoteName('#__aimarkdown_logs'))
@@ -79,7 +62,7 @@ class AnalyticsField extends FormField
         $cacheHits = (int) $db->loadResult();
         $hitRate = $totalVisits > 0 ? round(($cacheHits / $totalVisits) * 100, 1) : 0;
 
-        // 6. Breakdown by Bot
+        // 5. Breakdown by Bot
         $query = $db->getQuery(true)
             ->select([$db->quoteName('bot_name'), 'COUNT(*) AS ' . $db->quoteName('count')])
             ->from($db->quoteName('#__aimarkdown_logs'))
@@ -91,7 +74,7 @@ class AnalyticsField extends FormField
 
         $topBot = !empty($botStats) ? $botStats[0]['bot_name'] : 'None';
 
-        // 7. Top Pages Crawled (respecting $displayLimit)
+        // 6. Top Pages Crawled
         $query = $db->getQuery(true)
             ->select([$db->quoteName('url'), 'COUNT(*) AS ' . $db->quoteName('count')])
             ->from($db->quoteName('#__aimarkdown_logs'))
@@ -102,7 +85,7 @@ class AnalyticsField extends FormField
         $db->setQuery($query);
         $topPages = $db->loadAssocList() ?: [];
 
-        // 8. Recent Visits (respecting $displayLimit)
+        // 7. Recent Visits
         $query = $db->getQuery(true)
             ->select(['bot_name', 'url', 'is_cache_hit', 'ip_address', 'created_at'])
             ->from($db->quoteName('#__aimarkdown_logs'))
@@ -111,20 +94,23 @@ class AnalyticsField extends FormField
         $db->setQuery($query);
         $recentLogs = $db->loadAssocList() ?: [];
 
+        $token = Session::getFormToken();
+
         ob_start();
         ?>
         <div class="ai-analytics-dashboard my-3">
-            <!-- Header bar with Clear Statistics Button -->
+            <!-- Header bar with AJAX Clear Statistics Button -->
             <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
                 <div>
                     <h5 class="mb-0 fw-bold text-dark">AI Crawler Activity (Last 30 Days)</h5>
                     <small class="text-muted">Displaying up to <?php echo $displayLimit; ?> items per section</small>
                 </div>
-                <a href="<?php echo htmlspecialchars($clearUrl, ENT_QUOTES, 'UTF-8'); ?>"
-                   class="btn btn-sm btn-outline-danger"
-                   onclick="return confirm('Are you sure you want to permanently clear all AI visit logs?');">
+                <button type="button"
+                        id="btn-clear-ai-logs"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="clearAiMarkdownLogs(this);">
                     <span class="icon-trash" aria-hidden="true"></span> Clear Statistics
-                </a>
+                </button>
             </div>
 
             <!-- KPI Cards -->
@@ -234,6 +220,50 @@ class AnalyticsField extends FormField
                 </div>
             </div>
         </div>
+
+        <script>
+        function clearAiMarkdownLogs(btn) {
+            if (!confirm('Are you sure you want to permanently clear all AI visit logs?')) {
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Clearing...';
+
+            const token = '<?php echo $token; ?>';
+            const url = 'index.php?aimarkdown_action=clear_logs&' + token + '=1';
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.success) {
+                    const dashboard = document.querySelector('.ai-analytics-dashboard');
+                    if (dashboard) {
+                        dashboard.innerHTML = `
+                            <div class="alert alert-success my-3">
+                                <h5 class="alert-heading mb-1">Statistics Cleared</h5>
+                                <p class="mb-0">All AI crawler logs have been deleted successfully.</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    alert('Error clearing statistics: ' + (data.message || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="icon-trash" aria-hidden="true"></span> Clear Statistics';
+                }
+            })
+            .catch(error => {
+                alert('Network error while clearing statistics.');
+                btn.disabled = false;
+                btn.innerHTML = '<span class="icon-trash" aria-hidden="true"></span> Clear Statistics';
+            });
+        }
+        </script>
         <?php
         return (string) ob_get_clean();
     }
