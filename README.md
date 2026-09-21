@@ -182,5 +182,5 @@ Link: <https://www.example.com/?output=markdown>; rel="alternate"; type="text/ma
 ---
 
 ## 📄 License
-This project is open-source software licensed under the [GNU General Public License v2.0 or later](LICENSE).
+This project is open-source software licensed under the [AGPL-3.0 license](LICENSE).
 ```
