@@ -242,7 +242,7 @@
 
     <updateservers>
         <server type="extension" priority="1" name="AI Markdown for Gridbox Updates">
-            https://merdroid.pl/updates/aimarkdown.xml
+            https://raw.githubusercontent.com/merserwis/plg_system_aimarkdown/refs/heads/main/update.xml
         </server>
     </updateservers>
 </extension>
