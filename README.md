@@ -1,8 +1,3 @@
-Oto gotowy, profesjonalny plik **`README.md`** w języku angielskim (standard dla publicznych repozytoriów na GitHubie). 
-
-Zawiera estetyczne plakietki (*badges*), architekturę wtyczki, instrukcję instalacji, konfigurację oraz przykłady testów cURL. Wystarczy otworzyć plik `README.md` w repozytorium na GitHubie, kliknąć ikonę ołówka (edycja) i wkleić poniższą treść:
-
-```markdown
 # System - AI Markdown for Balbooa Gridbox (Joomla 5 & 6)
 
 [![Joomla Version](https://img.shields.io/badge/Joomla-5.x%20%7C%206.x-blue?style=for-the-badge&logo=joomla)](https://www.joomla.org)
