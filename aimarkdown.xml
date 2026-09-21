@@ -2,9 +2,13 @@
 <extension type="plugin" group="system" method="upgrade">
     <name>System - AI Markdown for Gridbox</name>
     <author>Merserwis</author>
+    <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
+    <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
     <creationDate>2026-09-21</creationDate>
-    <version>1.3.0</version>
-    <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with high-performance caching, YAML Frontmatter, tab/accordion unrolling, PDF prioritization, and built-in AI bot analytics.</description>
+    <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
+    <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
+    <version>1.3.2</version>
+    <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with high-performance caching, YAML Frontmatter, tab/accordion unrolling, PDF prioritization, and local AI analytics.</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
     
@@ -19,6 +23,14 @@
     <config>
         <fields name="params">
             <fieldset name="basic" label="Settings">
+                <field
+                    name="extension_info"
+                    type="note"
+                    label="Project &amp; Support"
+                    description="&lt;p class=&quot;mb-1&quot;&gt;&lt;strong&gt;Repository &amp; Docs:&lt;/strong&gt; &lt;a href=&quot;https://github.com/merserwis/plg_system_aimarkdown/&quot; target=&quot;_blank&quot; rel=&quot;noopener noreferrer&quot;&gt;https://github.com/merserwis/plg_system_aimarkdown/&lt;/a&gt;&lt;/p&gt;&lt;p class=&quot;mb-0&quot;&gt;&lt;strong&gt;Contact:&lt;/strong&gt; &lt;a href=&quot;mailto:a.blazewicz@merserwis.pl&quot;&gt;a.blazewicz@merserwis.pl&lt;/a&gt; | &lt;strong&gt;License:&lt;/strong&gt; AGPL-3.0&lt;/p&gt;"
+                    class="alert alert-info"
+                />
+
                 <field
                     name="enable_frontmatter"
                     type="radio"
@@ -214,6 +226,20 @@
                 >
                     <option value="0">JNO</option>
                     <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="analytics_display_limit"
+                    type="list"
+                    label="Analytics Display Limit"
+                    description="Select how many top bots, top visited pages, and recent requests to display in the dashboard."
+                    default="10"
+                    showon="enable_analytics:1"
+                >
+                    <option value="5">5</option>
+                    <option value="10">10 (Default)</option>
+                    <option value="15">15</option>
+                    <option value="30">30</option>
                 </field>
 
                 <field
