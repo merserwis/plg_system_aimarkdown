@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="module" client="administrator" method="upgrade">
+    <name>mod_aimarkdown_dashboard</name>
+    <author>Merserwis</author>
+    <creationDate>2026-09-22</creationDate>
+    <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
+    <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
+    <version>1.4.0</version>
+    <description>Dashboard widget for Joomla 6 displaying real-time AI crawler traffic and Markdown cache statistics.</description>
+    <files>
+        <filename module="mod_aimarkdown_dashboard">mod_aimarkdown_dashboard.php</filename>
+    </files>
+</extension>

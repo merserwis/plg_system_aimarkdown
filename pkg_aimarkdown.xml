@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="package" version="6.0" method="upgrade">
+    <name>AI Markdown for Gridbox Package</name>
+    <packagename>aimarkdown</packagename>
+    <version>1.4.0</version>
+    <creationDate>2026-09-22</creationDate>
+    <author>Merserwis</author>
+    <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
+    <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
+    <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
+    <license>GNU Affero General Public License version 3 or later</license>
+    <description>AI Markdown Suite: System Plugin, Admin Menu Shortcut &amp; Home Dashboard Module.</description>
+    <files folder="packages">
+        <file type="plugin" id="aimarkdown" group="system">plg_system_aimarkdown.zip</file>
+        <file type="component" id="com_aimarkdown">com_aimarkdown.zip</file>
+        <file type="module" id="mod_aimarkdown_dashboard" client="administrator">mod_aimarkdown_dashboard.zip</file>
+    </files>
+    <updateservers>
+        <server type="extension" priority="1" name="AI Markdown for Gridbox Updates">
+            https://raw.githubusercontent.com/merserwis/plg_system_aimarkdown/refs/heads/main/update.xml
+        </server>
+    </updateservers>
+</extension>

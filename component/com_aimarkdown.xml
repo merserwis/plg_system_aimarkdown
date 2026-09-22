@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="component" client="administrator" method="upgrade">
+    <name>com_aimarkdown</name>
+    <author>Merserwis</author>
+    <version>1.4.0</version>
+    <description>AI Markdown for Gridbox</description>
+    <administration>
+        <menu img="class:robot">AI Markdown for Gridbox</menu>
+        <files folder="admin">
+            <filename>aimarkdown.php</filename>
+        </files>
+    </administration>
+</extension>
