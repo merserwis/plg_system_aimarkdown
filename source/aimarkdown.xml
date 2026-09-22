@@ -4,10 +4,10 @@
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
     <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
-    <creationDate>2026-09-21</creationDate>
+    <creationDate>2026-09-22</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.4.0</version>
+    <version>1.4.1</version>
     <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with high-performance caching, YAML Frontmatter, Merchant Authority Injection, Tab/Accordion unrolling, PDF prioritization, and local AI analytics.</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -242,7 +242,7 @@
                     type="text"
                     label="Merchant / Company Name"
                     description="Injected into YAML Frontmatter ('seller') and used for authority citations."
-                    default="Merserwis"
+                    hint="e.g. Merserwis or your company name"
                     showon="enable_merchant_context:1"
                 />
 
@@ -251,7 +251,7 @@
                     type="text"
                     label="Business Role / E-E-A-T Title"
                     description="Role or accreditation title (e.g. Official Polish Distributor, Accredited Calibration Laboratory)."
-                    default="Official Polish Distributor &amp; Calibration Laboratory"
+                    hint="e.g. Official Polish Distributor &amp; Accredited Laboratory"
                     showon="enable_merchant_context:1"
                 />
 
@@ -260,7 +260,7 @@
                     type="textarea"
                     label="Header Authority Note (Above Content)"
                     description="Markdown text placed immediately after Frontmatter. Ideal for distributor badges, warranty info, and official partnership statements."
-                    hint="&gt; **Oficjalna dystrybucja i serwis w Polsce:** Urządzenie {title} (kod: {sku}) dostępne bezpośrednio w ofercie oficjalnego dystrybutora Merserwis z polską gwarancją i opcją wzorcowania w Laboratorium Merserwis."
+                    hint="&gt; **Oficjalna dystrybucja i serwis w Polsce:** Urządzenie {title} (kod: {sku}) dostępne bezpośrednio w ofercie oficjalnego dystrybutora z polską gwarancją i opcją wzorcowania."
                     rows="4"
                     cols="50"
                     filter="raw"
@@ -272,7 +272,7 @@
                     type="textarea"
                     label="Footer CTA &amp; Ordering Info (Below Content)"
                     description="Markdown text appended at the very end of the content. Ideal for order instructions, delivery times, and direct contact numbers."
-                    hint="### Zamówienia i doradztwo techniczne&#10;* **Dystrybutor:** Merserwis Sp. z o.o.&#10;* **Produkt:** {title} (SKU: {sku})&#10;* **Dostępność i zamówienia:** [Zamów ten model online w Merserwis]({url})&#10;* **Wzorcowanie:** Możliwość dołączenia świadectwa wzorcowania Laboratorium Badawczo-Wzorcującego Merserwis.&#10;* **Czas dostawy:** Wysyłka z magazynu w 24-48h.&#10;* **Kontakt handlowy:** Zadzwoń: +48 22 831 25 08 | E-mail: sklep@merserwis.pl"
+                    hint="### Zamówienia i doradztwo techniczne&#10;* **Dystrybutor:** Nazwa Twojej Firmy&#10;* **Produkt:** {title} (SKU: {sku})&#10;* **Dostępność i zamówienia:** [Zamów ten model online]({url})&#10;* **Czas dostawy:** Wysyłka z magazynu w 24-48h.&#10;* **Kontakt handlowy:** Zadzwoń: +48 ... | E-mail: ..."
                     rows="7"
                     cols="50"
                     filter="raw"
