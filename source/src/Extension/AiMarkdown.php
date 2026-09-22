@@ -943,8 +943,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         // Inject merchant metadata if enabled
         if ((bool) $this->params->get('enable_merchant_context', 1)) {
-            $sellerName = trim((string) $this->params->get('merchant_name', 'Merserwis'));
-            $sellerType = trim((string) $this->params->get('merchant_type', 'Official Polish Distributor & Calibration Laboratory'));
+            $sellerName = trim((string) $this->params->get('merchant_name', ''));
+            $sellerType = trim((string) $this->params->get('merchant_type', ''));
 
             if (!empty($sellerName)) {
                 $orderedKeys['seller'] = $sellerName;
