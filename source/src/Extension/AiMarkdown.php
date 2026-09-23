@@ -1393,7 +1393,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $addedUrls = [];
             $totalLinksCount = 0;
 
-            // 1. Core Pages (Główne pozycje z menu Joomla)
+            // 1. Core Pages (Główne pozycje z menu Joomla z unikalnym opisem)
             $query = $db->getQuery(true)
                 ->select(['title', 'link', 'alias'])
                 ->from($db->quoteName('#__menu'))
@@ -1412,7 +1412,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
                         continue;
                     }
-                    $sectionContent .= "- [" . $item['title'] . "](" . $url . "): Główne informacje i oferta serwisu.\n";
+                    // Inteligentny opis dopasowany do pozycji menu
+                    $sectionContent .= "- [" . $item['title'] . "](" . $url . "): Oficjalna podstrona: " . $item['title'] . " serwisu " . $siteTitle . ".\n";
                     $addedUrls[$url] = true;
                     $totalLinksCount++;
                 }
@@ -1421,12 +1422,18 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 }
             }
 
-            // 2. Balbooa Gridbox Categories & Apps (Kategorie projektów, narzędzi, bloga)
+            // 2. Balbooa Gridbox Categories & Apps (Pobieranie prawdziwych opisów z bazy lub unikalnego opisu)
             if (in_array($db->replacePrefix('#__gridbox_categories'), $tables, true)) {
                 $catColumns = $db->getTableColumns('#__gridbox_categories');
                 $selectCat = ['id', 'title'];
                 if (isset($catColumns['alias'])) {
                     $selectCat[] = 'alias';
+                }
+                if (isset($catColumns['description'])) {
+                    $selectCat[] = 'description';
+                }
+                if (isset($catColumns['meta_description'])) {
+                    $selectCat[] = 'meta_description';
                 }
 
                 $query = $db->getQuery(true)
@@ -1450,7 +1457,27 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                         if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
                             continue;
                         }
-                        $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): Kategoria projektów i materiałów.\n";
+
+                        // Pobierz realny opis z Gridboxa jeśli istnieje, lub wygeneruj unikalny na bazie nazwy
+                        $catDesc = '';
+                        if (!empty($cat['meta_description'])) {
+                            $catDesc = strip_tags($cat['meta_description']);
+                        } elseif (!empty($cat['description'])) {
+                            $catDesc = strip_tags($cat['description']);
+                        }
+
+                        $catDesc = trim(preg_replace('/\s+/', ' ', $catDesc));
+
+                        if (!empty($catDesc)) {
+                            if (mb_strlen($catDesc) > 120) {
+                                $catDesc = mb_substr($catDesc, 0, 117) . '...';
+                            }
+                            $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): " . $catDesc . "\n";
+                        } else {
+                            // Unikalny, kontekstowy opis z nazwą kategorii
+                            $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): Oferta i aparatura w kategorii: " . $cat['title'] . ".\n";
+                        }
+
                         $addedUrls[$url] = true;
                         $totalLinksCount++;
                     }
@@ -1460,7 +1487,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 }
             }
 
-            // 3. Balbooa Gridbox Pages (Wszystkie wpisy: Case Study, Narzędzia, Blog, Produkty, Strony)
+           // Pobierz preferencje sortowania i limitu z konfiguracji
+            $sortBy   = (string) $this->params->get('llms_sort_by', 'hits');
+            $maxItems = (int) $this->params->get('llms_max_items', 750);
+
+            // 3. Balbooa Gridbox Pages (Sortowane po wyświetleniach / hits)
             if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
                 $pageColumns = $db->getTableColumns('#__gridbox_pages');
                 
@@ -1474,8 +1505,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 if (isset($pageColumns['meta_description'])) {
                     $selectFields[] = 'p.meta_description';
                 }
-                if (isset($pageColumns['app_type'])) {
-                    $selectFields[] = 'p.app_type';
+                if (isset($pageColumns['hits'])) {
+                    $selectFields[] = 'p.hits';
+                } elseif (isset($pageColumns['views'])) {
+                    $selectFields[] = 'p.views';
                 }
 
                 $query = $db->getQuery(true)
@@ -1486,8 +1519,24 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     $query->where($db->quoteName('p.published') . ' = 1');
                 }
 
-                // Pobieramy do 500 wpisów (zarówno artykułów, case studies, jak i produktów)
-                $query->order('p.id DESC')->setLimit(500);
+                // Sortowanie po wyświetleniach (lub dacie)
+                if ($sortBy === 'hits') {
+                    if (isset($pageColumns['hits'])) {
+                        $query->order('p.hits DESC, p.id DESC');
+                    } elseif (isset($pageColumns['views'])) {
+                        $query->order('p.views DESC, p.id DESC');
+                    } else {
+                        $query->order('p.id DESC');
+                    }
+                } else {
+                    $query->order('p.id DESC');
+                }
+
+                // Ustaw limit (0 = bez limitu)
+                if ($maxItems > 0) {
+                    $query->setLimit($maxItems);
+                }
+
                 $db->setQuery($query);
                 $pages = $db->loadAssocList() ?: [];
 
@@ -1513,19 +1562,26 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     }
 
                     if (!empty($sectionContent)) {
-                        $txt .= "## Projekty, wdrożenia i baza wiedzy\n\n" . $sectionContent . "\n";
+                        $sectionTitle = ($sortBy === 'hits') ? 'Najpopularniejsze produkty i aparatura pomiarowa' : 'Produkty, wdrożenia i baza wiedzy';
+                        $txt .= "## " . $sectionTitle . "\n\n" . $sectionContent . "\n";
                     }
                 }
             }
 
-            // 4. Standardowe artykuły Joomla (#__content) - jeśli istnieją
+            // 4. Standardowe artykuły Joomla (#__content) sortowane po hits
             if (in_array($db->replacePrefix('#__content'), $tables, true)) {
                 $query = $db->getQuery(true)
-                    ->select(['id', 'title', 'alias', 'introtext', 'metadesc'])
+                    ->select(['id', 'title', 'alias', 'introtext', 'metadesc', 'hits'])
                     ->from($db->quoteName('#__content'))
-                    ->where($db->quoteName('state') . ' = 1')
-                    ->order('id DESC')
-                    ->setLimit(100);
+                    ->where($db->quoteName('state') . ' = 1');
+
+                if ($sortBy === 'hits') {
+                    $query->order('hits DESC, id DESC');
+                } else {
+                    $query->order('id DESC');
+                }
+
+                $query->setLimit(150);
                 $db->setQuery($query);
                 $articles = $db->loadAssocList() ?: [];
 
@@ -1554,7 +1610,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     }
 
                     if (!empty($sectionContent)) {
-                        $txt .= "## Artykuły i publikacje\n\n" . $sectionContent . "\n";
+                        $txt .= "## Baza wiedzy i artykuły\n\n" . $sectionContent . "\n";
                     }
                 }
             }

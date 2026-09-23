@@ -7,7 +7,7 @@
     <creationDate>2026-09-23</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.5.0</version>
+    <version>1.5.1</version>
     <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with llmstxt.org generator, B2B Price Anchoring, caching, YAML Frontmatter, hybrid FAQ, and AI analytics.</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -302,6 +302,33 @@
                     filter="raw"
                     showon="enable_llmstxt:1"
                 />
+
+                <field
+                    name="llms_sort_by"
+                    type="list"
+                    label="Sort Items By"
+                    description="Choose how products and articles are prioritized in /llms.txt. Highly recommended: Most Popular (Hits)."
+                    default="hits"
+                    showon="enable_llmstxt:1"
+                >
+                    <option value="hits">Most Popular (By Views / Hits)</option>
+                    <option value="date">Newest First (By ID / Date)</option>
+                </field>
+
+                <field
+                    name="llms_max_items"
+                    type="list"
+                    label="Max Products / Pages in /llms.txt"
+                    description="Limit items to prevent exceeding LLM context window limits. 500-1000 is recommended by llmstxt.org."
+                    default="750"
+                    showon="enable_llmstxt:1"
+                >
+                    <option value="500">Top 500 items (Recommended for AI)</option>
+                    <option value="750">Top 750 items</option>
+                    <option value="1000">Top 1000 items</option>
+                    <option value="2000">Top 2000 items</option>
+                    <option value="0">All Items (No Limit - May create very large file)</option>
+                </field>
 
                 <field
                     name="llms_action_dashboard"
