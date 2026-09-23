@@ -605,12 +605,13 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         $md = preg_replace('/\n{3,}/', "\n\n", $md);
         $md = trim($md);
 
-        // 8. Merchant Header Note Injection
+        // 8. Merchant Header Note Injection (Automatically formatted as blockquote)
         if ((bool) $this->params->get('enable_merchant_context', 1)) {
             $headerText = trim((string) $this->params->get('merchant_header_text', ''));
             if (!empty($headerText)) {
                 $parsedHeader = $this->replaceDynamicTags($headerText, $meta);
-                $md = $parsedHeader . "\n\n" . $md;
+                $formattedHeader = $this->formatAsBlockquote($parsedHeader);
+                $md = $formattedHeader . "\n\n" . $md;
             }
         }
 
@@ -1359,7 +1360,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
     }
 
-    /**
+   /**
      * Generate the /llms.txt file in the site root directory according to https://llmstxt.org.
      */
     public function generateLlmsTxtFile(): array
@@ -1388,8 +1389,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
 
             $db = Factory::getDbo();
+            $totalLinksCount = 0;
 
-            // 1. Core Pages (Główne sekcje z menu Joomla)
+            // 1. Core Pages (Główne pozycje z menu Joomla)
             $query = $db->getQuery(true)
                 ->select(['title', 'link', 'alias'])
                 ->from($db->quoteName('#__menu'))
@@ -1402,19 +1404,23 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $menuItems = $db->loadAssocList() ?: [];
 
             if (!empty($menuItems)) {
-                $txt .= "## Główne sekcje\n\n";
+                $sectionContent = '';
                 foreach ($menuItems as $item) {
                     $url = $rootUri . '/' . $item['alias'];
                     if ($this->isUrlExcluded($url, $excludeList)) {
                         continue;
                     }
-                    $txt .= "- [" . $item['title'] . "](" . $url . "): Główne informacje i oferta serwisu.\n";
+                    $sectionContent .= "- [" . $item['title'] . "](" . $url . "): Główne informacje i oferta serwisu.\n";
+                    $totalLinksCount++;
                 }
-                $txt .= "\n";
+                if (!empty($sectionContent)) {
+                    $txt .= "## Główne sekcje\n\n" . $sectionContent . "\n";
+                }
             }
 
-            // 2. Balbooa Gridbox Categories
             $tables = $db->getTableList();
+
+            // 2. Balbooa Gridbox Categories
             if (in_array($db->replacePrefix('#__gridbox_categories'), $tables, true)) {
                 $query = $db->getQuery(true)
                     ->select(['title', 'alias'])
@@ -1425,54 +1431,74 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 $categories = $db->loadAssocList() ?: [];
 
                 if (!empty($categories)) {
-                    $txt .= "## Kategorie i Oferta\n\n";
+                    $sectionContent = '';
                     foreach ($categories as $cat) {
                         $url = $rootUri . '/' . $cat['alias'];
                         if ($this->isUrlExcluded($url, $excludeList)) {
                             continue;
                         }
-                        $txt .= "- [" . $cat['title'] . "](" . $url . "): Katalog urządzeń i aparatury pomiarowej.\n";
+                        $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): Katalog urządzeń i aparatury pomiarowej.\n";
+                        $totalLinksCount++;
                     }
-                    $txt .= "\n";
+                    if (!empty($sectionContent)) {
+                        $txt .= "## Kategorie i Oferta\n\n" . $sectionContent . "\n";
+                    }
                 }
             }
 
-            // 3. Balbooa Gridbox Products
+            // 3. Balbooa Gridbox Products & Pages (Zabezpieczone zapytanie SQL)
             if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
+                // Sprawdź dostępne kolumny w tabeli, aby uniknąć błędów
+                $columns = $db->getTableColumns('#__gridbox_pages');
+                
+                $selectFields = ['p.id', 'p.title'];
+                if (isset($columns['intro_text'])) {
+                    $selectFields[] = 'p.intro_text';
+                }
+                if (isset($columns['meta_description'])) {
+                    $selectFields[] = 'p.meta_description';
+                }
+
                 $query = $db->getQuery(true)
-                    ->select(['p.title', 'p.alias', 'c.alias AS cat_alias', 'p.intro_text'])
+                    ->select($selectFields)
                     ->from($db->quoteName('#__gridbox_pages', 'p'))
-                    ->leftJoin($db->quoteName('#__gridbox_categories', 'c') . ' ON p.category_id = c.id')
-                    ->where($db->quoteName('p.published') . ' = 1')
-                    ->where($db->quoteName('p.page_category') . ' = ' . $db->quote('product'))
-                    ->order('p.id DESC')
-                    ->setLimit(150);
+                    ->where($db->quoteName('p.published') . ' = 1');
+
+                if (isset($columns['page_category'])) {
+                    $query->where($db->quoteName('p.page_category') . ' = ' . $db->quote('product'));
+                }
+
+                $query->order('p.id DESC')->setLimit(200);
                 $db->setQuery($query);
                 $products = $db->loadAssocList() ?: [];
 
                 if (!empty($products)) {
-                    $txt .= "## Wybrane produkty i aparatura pomiarowa\n\n";
+                    $sectionContent = '';
                     foreach ($products as $prod) {
-                        $prodPath = (!empty($prod['cat_alias']) ? $prod['cat_alias'] . '/' : '') . $prod['alias'];
-                        $url = $rootUri . '/' . $prodPath;
+                        // Zbuduj bezpieczny URL produktu (zgodny z routerem Gridbox)
+                        $slug = \Joomla\CMS\Filter\OutputFilter::stringURLSafe($prod['title']);
+                        $url  = $rootUri . '/' . $slug;
 
                         if ($this->isUrlExcluded($url, $excludeList)) {
                             continue;
                         }
 
-                        $desc = !empty($prod['intro_text']) ? strip_tags($prod['intro_text']) : 'Profesjonalny przyrząd pomiarowy z polską gwarancją i opcją wzorcowania.';
+                        $desc = !empty($prod['intro_text']) ? strip_tags($prod['intro_text']) : (!empty($prod['meta_description']) ? $prod['meta_description'] : 'Profesjonalny przyrząd pomiarowy z polską gwarancją i opcją wzorcowania.');
                         $desc = trim(preg_replace('/\s+/', ' ', $desc));
                         if (mb_strlen($desc) > 120) {
                             $desc = mb_substr($desc, 0, 117) . '...';
                         }
 
-                        $txt .= "- [" . $prod['title'] . "](" . $url . "): " . $desc . "\n";
+                        $sectionContent .= "- [" . $prod['title'] . "](" . $url . "): " . $desc . "\n";
+                        $totalLinksCount++;
                     }
-                    $txt .= "\n";
+                    if (!empty($sectionContent)) {
+                        $txt .= "## Wybrane produkty i aparatura pomiarowa\n\n" . $sectionContent . "\n";
+                    }
                 }
             }
 
-            // Save to physical file JPATH_SITE/llms.txt
+            // Zapis do fizycznego pliku JPATH_SITE/llms.txt
             $targetPath = JPATH_SITE . '/llms.txt';
             $success = @file_put_contents($targetPath, $txt, LOCK_EX);
 
@@ -1481,10 +1507,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
 
             return [
-                'success' => true,
-                'message' => 'Plik /llms.txt został pomyślnie wygenerowany!',
-                'date'    => date('Y-m-d H:i:s'),
-                'size'    => round(filesize($targetPath) / 1024, 2) . ' KB'
+                'success'     => true,
+                'message'     => 'Plik /llms.txt został pomyślnie wygenerowany!',
+                'date'        => date('Y-m-d H:i:s'),
+                'size'        => round(filesize($targetPath) / 1024, 2) . ' KB',
+                'links_count' => $totalLinksCount
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Błąd generowania: ' . $e->getMessage()];
@@ -1511,5 +1538,35 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
 
         return false;
+    }
+
+    /**
+     * Automatically format text as a Markdown blockquote (>), supporting multiline text without double-quoting.
+     *
+     * @param string $text
+     * @return string
+     */
+    private function formatAsBlockquote(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $text);
+        $formatted = [];
+
+        foreach ($lines as $line) {
+            $trimmedLine = trim($line);
+            if ($trimmedLine === '') {
+                $formatted[] = '>';
+            } elseif (str_starts_with($trimmedLine, '>')) {
+                $formatted[] = $line;
+            } else {
+                $formatted[] = '> ' . $line;
+            }
+        }
+
+        return implode("\n", $formatted);
     }
 }
