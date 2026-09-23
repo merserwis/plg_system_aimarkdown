@@ -260,7 +260,7 @@
                     type="text"
                     label="Site / Project Title (H1)"
                     description="The main title displayed at the top of /llms.txt."
-                    default="Merserwis - Aparatura Pomiarowa i Laboratorium Wzorcujące"
+                    hint="e.g. Merserwis - Measurement Instrumentation &amp; Calibration"
                     showon="enable_llmstxt:1"
                 />
 
@@ -269,7 +269,7 @@
                     type="textarea"
                     label="Short Summary Blockquote (>)"
                     description="A concise 2-3 sentence overview of the company, accreditation, and offering for LLMs."
-                    default="Oficjalny dystrybutor profesjonalnej aparatury kontrolno-pomiarowej oraz akredytowane laboratorium wzorcujące w Polsce. Pomiary instalacji elektrycznych, stacji ładowania EVSE, analizatory zasilania i kompleksowe wzorcowanie przyrządów."
+                    hint="e.g. Official distributor of testing equipment in Poland. Electrical safety meters, EVSE testing, power quality analyzers, and calibration services."
                     rows="3"
                     cols="50"
                     filter="raw"
@@ -305,7 +305,7 @@
 
                 <field
                     name="llms_action_dashboard"
-                    type="llmsgenerator"
+                    type="llms"
                     showon="enable_llmstxt:1"
                 />
             </fieldset>

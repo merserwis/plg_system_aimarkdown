@@ -189,32 +189,32 @@ class AnalyticsField extends FormField
             </div>
 
             <!-- ========================================== -->
-            <!-- DEDYKOWANA SEKCJA DLA PLIKU /llms.txt       -->
+            <!-- DEDICATED SECTION FOR /llms.txt FILE       -->
             <!-- ========================================== -->
             <div class="card border border-primary-subtle shadow-sm mb-4">
                 <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center py-2">
                     <h6 class="mb-0 fw-bold text-primary">
-                        <span class="icon-file-text" aria-hidden="true"></span> Aktywność botów na pliku /llms.txt (Ostatnie 30 dni)
+                        <span class="icon-file-text" aria-hidden="true"></span> AI Bot Activity on /llms.txt (Last 30 Days)
                     </h6>
-                    <span class="badge bg-primary rounded-pill"><?php echo $totalLlmsVisits; ?> pobrań</span>
+                    <span class="badge bg-primary rounded-pill"><?php echo $totalLlmsVisits; ?> downloads</span>
                 </div>
                 <div class="card-body">
                     <?php if ($totalLlmsVisits === 0): ?>
                         <div class="text-muted small py-2">
-                            Brak zarejestrowanych wywołań <code>/llms.txt</code> w ciągu ostatnich 30 dni. Gdy modele AI (np. ClaudeBot, GPTBot) pobiorą plik mapy serwisu, szczegółowe zestawienie pojawi się w tym miejscu.
+                            No requests to <code>/llms.txt</code> recorded in the last 30 days. As soon as AI models (e.g. ClaudeBot, GPTBot) fetch the site map, detailed statistics will appear here.
                         </div>
                     <?php else: ?>
                         <div class="row g-3">
-                            <!-- Rozbicie na boty pobierające llms.txt -->
+                            <!-- Breakdown of bots fetching llms.txt -->
                             <div class="col-md-6 border-end">
-                                <h6 class="small text-muted text-uppercase mb-2">Boty pobierające /llms.txt:</h6>
+                                <h6 class="small text-muted text-uppercase mb-2">Bots Fetching /llms.txt:</h6>
                                 <?php foreach ($llmsBotStats as $stat): 
                                     $pct = round(($stat['count'] / $totalLlmsVisits) * 100, 1);
                                 ?>
                                     <div class="mb-2">
                                         <div class="d-flex justify-content-between small mb-1">
                                             <span class="fw-semibold"><?php echo htmlspecialchars($stat['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                            <span><?php echo $stat['count']; ?> pobrań (<?php echo $pct; ?>%)</span>
+                                            <span><?php echo $stat['count']; ?> downloads (<?php echo $pct; ?>%)</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
                                             <div class="progress-bar bg-info" role="progressbar" style="width: <?php echo $pct; ?>%"></div>
@@ -223,16 +223,16 @@ class AnalyticsField extends FormField
                                 <?php endforeach; ?>
                             </div>
 
-                            <!-- Ostatnie pobrania llms.txt -->
+                            <!-- Latest llms.txt requests table -->
                             <div class="col-md-6">
-                                <h6 class="small text-muted text-uppercase mb-2">Ostatnie żądania /llms.txt:</h6>
+                                <h6 class="small text-muted text-uppercase mb-2">Latest /llms.txt Requests:</h6>
                                 <div class="table-responsive">
                                     <table class="table table-sm table-hover align-middle mb-0" style="font-size: 11px;">
                                         <thead>
                                             <tr class="text-muted">
-                                                <th>Data</th>
-                                                <th>Bot AI</th>
-                                                <th>Adres IP</th>
+                                                <th>Date &amp; Time</th>
+                                                <th>AI Bot</th>
+                                                <th>IP Address</th>
                                             </tr>
                                         </thead>
                                         <tbody>
