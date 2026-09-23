@@ -120,7 +120,7 @@ Miernik umożliwia pomiary stacji ładowania pojazdów elektrycznych AC przy uż
 * **Zamów online:** [Kup ten model w sklepie online](https://www.example.com/products/testers/metrel-mi-3107)
 * **Wzorcowanie:** Możliwość wystawienia świadectwa wzorcowania w Laboratorium Badawczo-Wzorcującym Merserwis.
 * **Czas dostawy:** Wysyłka w 24-48h.
-* **Kontakt:** Telefon: +48 22 831 25 08 | E-mail: sklep@merserwis.pl
+* **Kontakt:** Telefon: +48 22 831 25 08 | E-mail: dh@merserwis.pl
 ```
 
 ---
