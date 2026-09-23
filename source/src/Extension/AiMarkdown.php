@@ -1366,7 +1366,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
     public function generateLlmsTxtFile(): array
     {
         try {
-            $siteTitle   = trim((string) $this->params->get('llms_site_title', 'Merserwis'));
+            $siteTitle   = trim((string) $this->params->get('llms_site_title', 'Merdroid'));
             $siteSummary = trim((string) $this->params->get('llms_site_summary', ''));
             $rootUri     = rtrim(Uri::root(), '/');
 
@@ -1389,6 +1389,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
 
             $db = Factory::getDbo();
+            $tables = $db->getTableList();
+            $addedUrls = [];
             $totalLinksCount = 0;
 
             // 1. Core Pages (Główne pozycje z menu Joomla)
@@ -1407,10 +1409,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 $sectionContent = '';
                 foreach ($menuItems as $item) {
                     $url = $rootUri . '/' . $item['alias'];
-                    if ($this->isUrlExcluded($url, $excludeList)) {
+                    if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
                         continue;
                     }
                     $sectionContent .= "- [" . $item['title'] . "](" . $url . "): Główne informacje i oferta serwisu.\n";
+                    $addedUrls[$url] = true;
                     $totalLinksCount++;
                 }
                 if (!empty($sectionContent)) {
@@ -1418,82 +1421,140 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 }
             }
 
-            $tables = $db->getTableList();
-
-            // 2. Balbooa Gridbox Categories
+            // 2. Balbooa Gridbox Categories & Apps (Kategorie projektów, narzędzi, bloga)
             if (in_array($db->replacePrefix('#__gridbox_categories'), $tables, true)) {
+                $catColumns = $db->getTableColumns('#__gridbox_categories');
+                $selectCat = ['id', 'title'];
+                if (isset($catColumns['alias'])) {
+                    $selectCat[] = 'alias';
+                }
+
                 $query = $db->getQuery(true)
-                    ->select(['title', 'alias'])
-                    ->from($db->quoteName('#__gridbox_categories'))
-                    ->where($db->quoteName('published') . ' = 1')
-                    ->order($db->quoteName('id') . ' ASC');
+                    ->select($selectCat)
+                    ->from($db->quoteName('#__gridbox_categories'));
+
+                if (isset($catColumns['published'])) {
+                    $query->where($db->quoteName('published') . ' = 1');
+                }
+
+                $query->order('id ASC');
                 $db->setQuery($query);
                 $categories = $db->loadAssocList() ?: [];
 
                 if (!empty($categories)) {
                     $sectionContent = '';
                     foreach ($categories as $cat) {
-                        $url = $rootUri . '/' . $cat['alias'];
-                        if ($this->isUrlExcluded($url, $excludeList)) {
+                        $catSlug = !empty($cat['alias']) ? $cat['alias'] : \Joomla\CMS\Filter\OutputFilter::stringURLSafe($cat['title']);
+                        $url = $rootUri . '/' . $catSlug;
+
+                        if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
                             continue;
                         }
-                        $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): Katalog urządzeń i aparatury pomiarowej.\n";
+                        $sectionContent .= "- [" . $cat['title'] . "](" . $url . "): Kategoria projektów i materiałów.\n";
+                        $addedUrls[$url] = true;
                         $totalLinksCount++;
                     }
                     if (!empty($sectionContent)) {
-                        $txt .= "## Kategorie i Oferta\n\n" . $sectionContent . "\n";
+                        $txt .= "## Kategorie i działy tematyczne\n\n" . $sectionContent . "\n";
                     }
                 }
             }
 
-            // 3. Balbooa Gridbox Products & Pages (Zabezpieczone zapytanie SQL)
+            // 3. Balbooa Gridbox Pages (Wszystkie wpisy: Case Study, Narzędzia, Blog, Produkty, Strony)
             if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
-                // Sprawdź dostępne kolumny w tabeli, aby uniknąć błędów
-                $columns = $db->getTableColumns('#__gridbox_pages');
+                $pageColumns = $db->getTableColumns('#__gridbox_pages');
                 
                 $selectFields = ['p.id', 'p.title'];
-                if (isset($columns['intro_text'])) {
+                if (isset($pageColumns['alias'])) {
+                    $selectFields[] = 'p.alias';
+                }
+                if (isset($pageColumns['intro_text'])) {
                     $selectFields[] = 'p.intro_text';
                 }
-                if (isset($columns['meta_description'])) {
+                if (isset($pageColumns['meta_description'])) {
                     $selectFields[] = 'p.meta_description';
+                }
+                if (isset($pageColumns['app_type'])) {
+                    $selectFields[] = 'p.app_type';
                 }
 
                 $query = $db->getQuery(true)
                     ->select($selectFields)
-                    ->from($db->quoteName('#__gridbox_pages', 'p'))
-                    ->where($db->quoteName('p.published') . ' = 1');
+                    ->from($db->quoteName('#__gridbox_pages', 'p'));
 
-                if (isset($columns['page_category'])) {
-                    $query->where($db->quoteName('p.page_category') . ' = ' . $db->quote('product'));
+                if (isset($pageColumns['published'])) {
+                    $query->where($db->quoteName('p.published') . ' = 1');
                 }
 
-                $query->order('p.id DESC')->setLimit(200);
+                // Pobieramy do 500 wpisów (zarówno artykułów, case studies, jak i produktów)
+                $query->order('p.id DESC')->setLimit(500);
                 $db->setQuery($query);
-                $products = $db->loadAssocList() ?: [];
+                $pages = $db->loadAssocList() ?: [];
 
-                if (!empty($products)) {
+                if (!empty($pages)) {
                     $sectionContent = '';
-                    foreach ($products as $prod) {
-                        // Zbuduj bezpieczny URL produktu (zgodny z routerem Gridbox)
-                        $slug = \Joomla\CMS\Filter\OutputFilter::stringURLSafe($prod['title']);
+                    foreach ($pages as $p) {
+                        $slug = !empty($p['alias']) ? $p['alias'] : \Joomla\CMS\Filter\OutputFilter::stringURLSafe($p['title']);
                         $url  = $rootUri . '/' . $slug;
 
-                        if ($this->isUrlExcluded($url, $excludeList)) {
+                        if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
                             continue;
                         }
 
-                        $desc = !empty($prod['intro_text']) ? strip_tags($prod['intro_text']) : (!empty($prod['meta_description']) ? $prod['meta_description'] : 'Profesjonalny przyrząd pomiarowy z polską gwarancją i opcją wzorcowania.');
+                        $desc = !empty($p['intro_text']) ? strip_tags($p['intro_text']) : (!empty($p['meta_description']) ? $p['meta_description'] : 'Szczegółowy opis, analiza wdrożenia i specyfikacja.');
                         $desc = trim(preg_replace('/\s+/', ' ', $desc));
-                        if (mb_strlen($desc) > 120) {
-                            $desc = mb_substr($desc, 0, 117) . '...';
+                        if (mb_strlen($desc) > 130) {
+                            $desc = mb_substr($desc, 0, 127) . '...';
                         }
 
-                        $sectionContent .= "- [" . $prod['title'] . "](" . $url . "): " . $desc . "\n";
+                        $sectionContent .= "- [" . $p['title'] . "](" . $url . "): " . $desc . "\n";
+                        $addedUrls[$url] = true;
                         $totalLinksCount++;
                     }
+
                     if (!empty($sectionContent)) {
-                        $txt .= "## Wybrane produkty i aparatura pomiarowa\n\n" . $sectionContent . "\n";
+                        $txt .= "## Projekty, wdrożenia i baza wiedzy\n\n" . $sectionContent . "\n";
+                    }
+                }
+            }
+
+            // 4. Standardowe artykuły Joomla (#__content) - jeśli istnieją
+            if (in_array($db->replacePrefix('#__content'), $tables, true)) {
+                $query = $db->getQuery(true)
+                    ->select(['id', 'title', 'alias', 'introtext', 'metadesc'])
+                    ->from($db->quoteName('#__content'))
+                    ->where($db->quoteName('state') . ' = 1')
+                    ->order('id DESC')
+                    ->setLimit(100);
+                $db->setQuery($query);
+                $articles = $db->loadAssocList() ?: [];
+
+                if (!empty($articles)) {
+                    $sectionContent = '';
+                    foreach ($articles as $art) {
+                        $slug = !empty($art['alias']) ? $art['alias'] : \Joomla\CMS\Filter\OutputFilter::stringURLSafe($art['title']);
+                        $url  = $rootUri . '/' . $slug;
+
+                        if ($this->isUrlExcluded($url, $excludeList) || isset($addedUrls[$url])) {
+                            continue;
+                        }
+
+                        $desc = !empty($art['metadesc']) ? $art['metadesc'] : strip_tags($art['introtext']);
+                        $desc = trim(preg_replace('/\s+/', ' ', $desc));
+                        if (mb_strlen($desc) > 130) {
+                            $desc = mb_substr($desc, 0, 127) . '...';
+                        }
+                        if (empty($desc)) {
+                            $desc = 'Informacje i publikacje w serwisie.';
+                        }
+
+                        $sectionContent .= "- [" . $art['title'] . "](" . $url . "): " . $desc . "\n";
+                        $addedUrls[$url] = true;
+                        $totalLinksCount++;
+                    }
+
+                    if (!empty($sectionContent)) {
+                        $txt .= "## Artykuły i publikacje\n\n" . $sectionContent . "\n";
                     }
                 }
             }
