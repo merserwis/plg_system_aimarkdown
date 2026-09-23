@@ -9,18 +9,19 @@ use Joomla\CMS\Uri\Uri;
 use Joomla\Event\SubscriberInterface;
 
 /**
- * Main plugin class providing clean, cached Markdown negotiation with YAML Frontmatter,
- * Merchant Authority Injection, Tab/Accordion unrolling, PDF prioritization, and local AI analytics.
+ * Main plugin class providing clean, cached Markdown negotiation with B2B Price Anchoring,
+ * YAML Frontmatter, Hybrid FAQ Extraction/Generation, Merchant Authority Injection,
+ * Tab/Accordion unrolling, PDF prioritization, and local AI analytics.
  */
 final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 {
     public static function getSubscribedEvents(): array
-{
-    return [
-        'onAfterInitialise' => 'onAfterInitialise',
-        'onAfterRender'      => 'onAfterRender',
-    ];
-}
+    {
+        return [
+            'onAfterInitialise' => 'onAfterInitialise',
+            'onAfterRender'      => 'onAfterRender',
+        ];
+    }
 
     public function onAfterInitialise(): void
     {
@@ -28,7 +29,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         // 1. Obsługa zaplecza administratora
         if ($app->isClient('administrator')) {
-            // Przekierowanie z bocznego menu "Komponenty" bezpośrednio do edycji wtyczki
+            // Przekierowanie z bocznego menu "Komponenty" do wtyczki
             if ($app->input->get('option') === 'com_aimarkdown') {
                 $db = Factory::getDbo();
                 $query = $db->getQuery(true)
@@ -43,7 +44,21 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 return;
             }
 
-            // Obsługa przycisku czyszczenia bazy danych przez AJAX
+            // AJAX: Generowanie pliku /llms.txt na żądanie
+            if ($app->input->get('aimarkdown_action') === 'generate_llmstxt') {
+                if ($app->getIdentity()->authorise('core.edit', 'com_plugins') && \Joomla\CMS\Session\Session::checkToken('request')) {
+                    $result = $this->generateLlmsTxtFile();
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode($result);
+                    $app->close();
+                }
+
+                header('Content-Type: application/json; charset=utf-8', true, 403);
+                echo json_encode(['success' => false, 'message' => 'Unauthorized or invalid token']);
+                $app->close();
+            }
+
+            // AJAX: Czyszczenie bazy logów
             if ($app->input->get('aimarkdown_action') === 'clear_logs') {
                 if ($app->getIdentity()->authorise('core.edit', 'com_plugins') && \Joomla\CMS\Session\Session::checkToken('request')) {
                     $db = Factory::getDbo();
@@ -69,10 +84,40 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return;
         }
 
+        // 2. Obsługa bezpośredniego zapytania o /llms.txt z logowaniem analityki
+        $rawUri = $_SERVER['REQUEST_URI'] ?? '';
+        if (preg_match('/^\/llms\.txt(\?.*)?$/i', $rawUri)) {
+            if ((bool) $this->params->get('enable_llmstxt', 0)) {
+                $llmsUrl = rtrim(Uri::root(), '/') . '/llms.txt';
+
+                // Rejestracja bota odpytującego /llms.txt
+                $this->logAiVisit($llmsUrl, 1);
+
+                $filePath = JPATH_SITE . '/llms.txt';
+                if (!is_file($filePath)) {
+                    $this->generateLlmsTxtFile();
+                }
+                $content = is_file($filePath) ? (string) file_get_contents($filePath) : '';
+
+                if (!headers_sent()) {
+                    header('Content-Type: text/markdown; charset=utf-8');
+                    header('X-Robots-Tag: all');
+                    header('Vary: Accept', false);
+                }
+                echo $content;
+                $app->close();
+            }
+        }
+
+        // 3. Automatyczne generowanie pliku /llms.txt w tle według interwału
+        if ((bool) $this->params->get('enable_llmstxt', 0)) {
+            $this->checkAutomatedLlmsRegeneration();
+        }
+
         $method     = $app->input->getMethod();
         $isMarkdown = $this->isMarkdownRequested();
 
-        // 2. Standard HTML requests
+        // 4. Standard HTML requests
         if (!$isMarkdown) {
             if ($method === 'HEAD' && (bool) $this->params->get('show_alternate_link', 1)) {
                 $this->sendDiscoveryHeaders();
@@ -81,7 +126,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // 3. Markdown requests: Check cache if enabled
+        // 5. Markdown requests: Check cache if enabled
         if (!(bool) $this->params->get('enable_cache', 1)) {
             return;
         }
@@ -136,7 +181,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // 2. Convert generated HTML into clean Markdown with Merchant Context & Frontmatter
+        // 2. Convert generated HTML into clean Markdown with B2B Pricing, FAQ & Frontmatter
         $markdown = $this->convertToMarkdown($html, $canonicalUrl);
 
         // 3. Save to cache
@@ -179,6 +224,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         return str_replace(["\r", "\n"], '', $canonical);
     }
 
+    /**
+     * Send RFC 8288 agent discovery headers for HTML / HEAD responses.
+     */
     private function sendDiscoveryHeaders(): void
     {
         $app          = $this->getApplication();
@@ -191,6 +239,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             '<' . $rootUri . 'kontakt>; rel="service-doc"',
             '<' . $rootUri . 'robots.txt>; rel="describedby"'
         ];
+
+        // Ogłoszenie pliku /llms.txt dla botów AI (jeśli funkcja jest włączona w opcjach)
+        if ((bool) $this->params->get('enable_llmstxt', 0)) {
+            $linkHeaders[] = '<' . $rootUri . 'llms.txt>; rel="service-desc"';
+        }
+
         $linkHeaderValue = implode(', ', $linkHeaders);
 
         $app->setHeader('Link', $linkHeaderValue, false);
@@ -235,7 +289,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $userAgent = $app->input->server->getString('HTTP_USER_AGENT', '');
             $botName = $this->detectAiBot($userAgent);
 
-            // Cloudflare real IP detection fallback
             $rawIp = $app->input->server->getString('HTTP_CF_CONNECTING_IP', '')
                 ?: $app->input->server->getString('HTTP_X_FORWARDED_FOR', '')
                 ?: $app->input->server->getString('REMOTE_ADDR', '');
@@ -244,7 +297,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 $rawIp = trim(explode(',', $rawIp)[0]);
             }
 
-            // Anonymize IP (mask last octet for privacy / GDPR)
             $maskedIp = preg_replace(['/\.\d+$/', '/:[0-9a-fA-F]+$/'], ['.xxx', ':xxxx'], $rawIp) ?: 'Unknown';
 
             $db = Factory::getDbo();
@@ -269,7 +321,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $db->setQuery($query);
             $db->execute();
 
-            // Prune old logs (1% probability per request)
             if (random_int(1, 100) === 1) {
                 $days = (int) $this->params->get('log_retention_days', 30);
                 $pruneQuery = $db->getQuery(true)
@@ -279,7 +330,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                 $db->execute();
             }
         } catch (\Throwable $e) {
-            // Silently catch logging errors
         }
     }
 
@@ -382,9 +432,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         @file_put_contents($cacheFile, $content, LOCK_EX);
     }
 
-    /**
-     * Compute cache file path incorporating plugin settings hash for automatic invalidation.
-     */
     private function getCacheFilePath(string $canonicalUrl): string
     {
         $configSignature = substr(hash('sha256', (string) $this->params), 0, 8);
@@ -392,7 +439,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Parse HTML, apply Merchant Context, unroll components, and build final Markdown.
+     * Parse HTML, apply B2B Pricing, extract FAQs, apply Merchant Context, and build Markdown.
      */
     private function convertToMarkdown(string $html, string $canonicalUrl): string
     {
@@ -416,20 +463,36 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $pdfDownloads = $this->extractPdfDownloads($xpath, $rootUri);
         }
 
-        // 2. Extract product metadata & build YAML Frontmatter
+        // 2. Extract product metadata with B2B Price Anchoring & build YAML Frontmatter
         $meta = $this->extractProductMetadata($xpath, $canonicalUrl);
         $yamlFrontmatter = '';
         if ((bool) $this->params->get('enable_frontmatter', 1)) {
             $yamlFrontmatter = $this->buildYamlFrontmatter($meta, array_keys($pdfDownloads));
         }
 
-        // 3. Unroll Balbooa Gridbox Tabs & Accordions
+        // 3. Process FAQ section (Extract custom FAQ or auto-generate fallback)
+        $faqMarkdown = '';
+        $customFaqFound = false;
+
+        if ((bool) $this->params->get('enable_faq', 1)) {
+            $extractedFaq = $this->extractExistingFaq($xpath);
+
+            if (!empty($extractedFaq)) {
+                $customFaqFound = true;
+                $faqMarkdown = $this->formatFaqToMarkdown($extractedFaq);
+            } elseif ($meta['is_product'] && (bool) $this->params->get('auto_generate_faq', 1)) {
+                $generatedFaq = $this->generateAutoFaq($meta);
+                $faqMarkdown = $this->formatFaqToMarkdown($generatedFaq);
+            }
+        }
+
+        // 4. Unroll Balbooa Gridbox Tabs & Accordions
         if ((bool) $this->params->get('unroll_tabs_accordions', 1)) {
             $this->unrollGridboxTabs($xpath, $dom);
             $this->unrollGridboxAccordions($xpath, $dom);
         }
 
-        // 4. Default layout wrappers, forms, and scripts to remove
+        // 5. Default layout wrappers, forms, and scripts to remove
         $trash = [
             '//script',
             '//style',
@@ -450,7 +513,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             '//*[contains(@class, "modal")]'
         ];
 
-        // 5. User-defined custom exclude selectors
+        if ($customFaqFound) {
+            $trash[] = '//details';
+            $trash[] = '//*[self::h1 or self::h2 or self::h3][contains(translate(text(), "FAQ", "faq"), "faq")]';
+        }
+
+        // 6. User-defined custom exclude selectors
         $customSelectors = (string) $this->params->get('custom_exclude_selectors', '');
         if (!empty(trim($customSelectors))) {
             $lines = preg_split('/\r\n|\r|\n/', $customSelectors);
@@ -468,7 +536,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
         }
 
-        // 6. Balbooa Gridbox optional toggles
+        // 7. Balbooa Gridbox optional toggles
         if (!$this->params->get('show_category', 1)) {
             $trash[] = '//*[contains(@class, "ba-item-tags-and-pd-category")]//*[contains(@class, "category")]';
             $trash[] = '//*[contains(@class, "ba-blog-post-category")]';
@@ -481,7 +549,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             $trash[] = '//*[contains(@class, "ba-blog-post-tags")]';
         }
 
-        if (!$this->params->get('show_author', 0)) {
+        // Default for show_author is now 1 (Yes)
+        if (!$this->params->get('show_author', 1)) {
             $trash[] = '//*[contains(@class, "ba-item-post-author")]';
             $trash[] = '//*[contains(@class, "ba-blog-post-author")]';
             $trash[] = '//*[contains(@class, "ba-author")]';
@@ -518,7 +587,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
                     }
                 }
             } catch (\Throwable $e) {
-                // Silently ignore malformed custom XPath expressions
             }
         }
 
@@ -537,40 +605,39 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         $md = preg_replace('/\n{3,}/', "\n\n", $md);
         $md = trim($md);
 
-        // 7. Merchant Context Injection (Header Note & Footer CTA with Dynamic Tags)
+        // 8. Merchant Header Note Injection
         if ((bool) $this->params->get('enable_merchant_context', 1)) {
             $headerText = trim((string) $this->params->get('merchant_header_text', ''));
             if (!empty($headerText)) {
                 $parsedHeader = $this->replaceDynamicTags($headerText, $meta);
                 $md = $parsedHeader . "\n\n" . $md;
             }
+        }
 
-            // Append prioritized PDF downloads
-            if (!empty($pdfDownloads)) {
-                $pdfSection = "\n\n## Downloads & Documentation\n";
-                foreach ($pdfDownloads as $pdfUrl => $pdfTitle) {
-                    $pdfSection .= "* [" . $pdfTitle . "](" . $pdfUrl . ")\n";
-                }
-                $md .= $pdfSection;
+        // 9. Append FAQ Section (Extracted or Auto-generated)
+        if (!empty($faqMarkdown)) {
+            $md .= $faqMarkdown;
+        }
+
+        // 10. Append prioritized PDF downloads
+        if (!empty($pdfDownloads)) {
+            $pdfSection = "\n\n## Downloads & Documentation\n";
+            foreach ($pdfDownloads as $pdfUrl => $pdfTitle) {
+                $pdfSection .= "* [" . $pdfTitle . "](" . $pdfUrl . ")\n";
             }
+            $md .= $pdfSection;
+        }
 
+        // 11. Merchant Footer CTA Injection
+        if ((bool) $this->params->get('enable_merchant_context', 1)) {
             $footerText = trim((string) $this->params->get('merchant_footer_text', ''));
             if (!empty($footerText)) {
                 $parsedFooter = $this->replaceDynamicTags($footerText, $meta);
                 $md .= "\n\n" . $parsedFooter;
             }
-        } else {
-            // Append prioritized PDF downloads if merchant context is disabled
-            if (!empty($pdfDownloads)) {
-                $pdfSection = "\n\n## Downloads & Documentation\n";
-                foreach ($pdfDownloads as $pdfUrl => $pdfTitle) {
-                    $pdfSection .= "* [" . $pdfTitle . "](" . $pdfUrl . ")\n";
-                }
-                $md .= $pdfSection;
-            }
         }
 
-        // 8. Prepend YAML Frontmatter
+        // 12. Prepend YAML Frontmatter
         if (!empty($yamlFrontmatter)) {
             $md = $yamlFrontmatter . "\n\n" . $md;
         }
@@ -578,15 +645,140 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         return trim($md);
     }
 
-    /**
-     * Replace dynamic tags with actual page/product values.
-     */
+    private function extractExistingFaq(\DOMXPath $xpath): array
+    {
+        $faqs = [];
+
+        $jsonScripts = $xpath->query('//script[@type="application/ld+json"]');
+        if ($jsonScripts) {
+            foreach ($jsonScripts as $scriptNode) {
+                $rawJson = trim($scriptNode->nodeValue ?? '');
+                if (empty($rawJson) || stripos($rawJson, 'FAQPage') === false) {
+                    continue;
+                }
+
+                $data = json_decode($rawJson, true);
+                if (!is_array($data)) {
+                    continue;
+                }
+
+                $items = isset($data['@graph']) && is_array($data['@graph']) ? $data['@graph'] : [$data];
+
+                foreach ($items as $item) {
+                    if (($item['@type'] ?? '') === 'FAQPage' && !empty($item['mainEntity']) && is_array($item['mainEntity'])) {
+                        foreach ($item['mainEntity'] as $qa) {
+                            $question = trim($qa['name'] ?? '');
+                            $answer = '';
+                            if (isset($qa['acceptedAnswer']['text'])) {
+                                $answer = trim($qa['acceptedAnswer']['text']);
+                            } elseif (isset($qa['acceptedAnswer']) && is_string($qa['acceptedAnswer'])) {
+                                $answer = trim($qa['acceptedAnswer']);
+                            }
+
+                            if (!empty($question) && !empty($answer)) {
+                                $faqs[] = [
+                                    'q' => strip_tags(html_entity_decode($question, ENT_QUOTES | ENT_HTML5, 'UTF-8')),
+                                    'a' => strip_tags(html_entity_decode($answer, ENT_QUOTES | ENT_HTML5, 'UTF-8'))
+                                ];
+                            }
+                        }
+                        if (!empty($faqs)) {
+                            return $faqs;
+                        }
+                    }
+                }
+            }
+        }
+
+        $detailsList = $xpath->query('//details[.//summary]');
+        if ($detailsList && $detailsList->length > 0) {
+            foreach ($detailsList as $details) {
+                $summary = $xpath->query('.//summary', $details)->item(0);
+                if (!$summary) {
+                    continue;
+                }
+
+                $question = trim(preg_replace('/\s+/', ' ', $summary->textContent));
+
+                $clone = $details->cloneNode(true);
+                $sumInClone = (new \DOMXPath($clone->ownerDocument))->query('.//summary', $clone)->item(0);
+                if ($sumInClone && $sumInClone->parentNode) {
+                    $sumInClone->parentNode->removeChild($sumInClone);
+                }
+                $answer = trim(preg_replace('/\s+/', ' ', $clone->textContent));
+
+                if (!empty($question) && !empty($answer)) {
+                    $faqs[] = [
+                        'q' => html_entity_decode($question, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                        'a' => html_entity_decode($answer, ENT_QUOTES | ENT_HTML5, 'UTF-8')
+                    ];
+                }
+            }
+        }
+
+        return $faqs;
+    }
+
+    private function generateAutoFaq(array $meta): array
+    {
+        $faqs = [];
+        $title        = !empty($meta['title']) ? $meta['title'] : 'Produkt';
+        $sku          = !empty($meta['sku']) ? $meta['sku'] : '';
+        $brand        = !empty($meta['brand']) ? $meta['brand'] : '';
+        $category     = !empty($meta['category']) ? $meta['category'] : '';
+        $availability = !empty($meta['availability']) ? $meta['availability'] : 'w magazynie';
+        $seller       = trim((string) $this->params->get('merchant_name', ''));
+
+        $faqs[] = [
+            'q' => 'Czy ' . $title . ' objęty jest oficjalną gwarancją w Polsce?',
+            'a' => 'Tak, ' . $title . ' oferowany przez ' . (!empty($seller) ? $seller : 'oficjalnego dystrybutora') . ' pochodzi z autoryzowanego kanału sprzedaży i objęty jest pełną gwarancją producenta oraz wsparciem serwisowym.'
+        ];
+
+        $faqs[] = [
+            'q' => 'Czy można zamówić ' . $title . ' ze świadectwem wzorcowania?',
+            'a' => 'Tak, urządzenie' . (!empty($sku) ? ' (kod SKU: ' . $sku . ')' : '') . ' może zostać dostarczone ze świadectwem wzorcowania (certyfikatem kalibracji) wystawionym przez akredytowane laboratorium pomiarowe.'
+        ];
+
+        $faqs[] = [
+            'q' => 'Jaki jest czas realizacji zamówienia na ' . $title . '?',
+            'a' => 'Dla urządzeń o statusie dostępności "' . $availability . '" wysyłka realizowana jest standardowo w ciągu 24–48 godzin roboczych bezpośrednio z magazynu centralnego.'
+        ];
+
+        if (!empty($category) || !empty($brand)) {
+            $extra = !empty($brand) ? 'marki ' . $brand : 'z kategorii ' . $category;
+            $faqs[] = [
+                'q' => 'Dla kogo przeznaczone jest urządzenie ' . $title . '?',
+                'a' => 'Przyrząd ' . $extra . ' został zaprojektowany z myślą o profesjonalistach, technikach, instalatorach oraz inżynierach wymagających wysokiej dokładności pomiarowej i zgodności z normami bezpieczeństwa.'
+            ];
+        }
+
+        return $faqs;
+    }
+
+    private function formatFaqToMarkdown(array $faqs): string
+    {
+        if (empty($faqs)) {
+            return '';
+        }
+
+        $md = "\n\n## Najczęściej zadawane pytania (FAQ)\n";
+        foreach ($faqs as $faq) {
+            $q = trim($faq['q']);
+            $a = trim($faq['a']);
+            $md .= "\n### " . $q . "\n" . $a . "\n";
+        }
+
+        return $md;
+    }
+
     private function replaceDynamicTags(string $template, array $meta): string
     {
         $tags = [
             '{title}'        => $meta['title'] ?? '',
             '{sku}'          => $meta['sku'] ?? '',
             '{price}'        => $meta['price'] ?? '',
+            '{price_net}'    => !empty($meta['price_net']) ? ($meta['price_net'] . ' ' . ($meta['currency'] ?? 'PLN')) : '',
+            '{price_gross}'  => !empty($meta['price_gross']) ? ($meta['price_gross'] . ' ' . ($meta['currency'] ?? 'PLN')) : '',
             '{currency}'     => $meta['currency'] ?? '',
             '{availability}' => $meta['availability'] ?? '',
             '{brand}'        => $meta['brand'] ?? '',
@@ -796,9 +988,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         return "//*[contains(@class, '{$selector}')]";
     }
 
-    /**
-     * Extract product metadata from JSON-LD schema or Gridbox DOM elements.
-     */
     private function extractProductMetadata(\DOMXPath $xpath, string $canonicalUrl): array
     {
         $meta = [
@@ -809,6 +998,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             'brand'        => '',
             'category'     => '',
             'price'        => '',
+            'price_net'    => '',
+            'price_gross'  => '',
+            'vat_rate'     => '',
             'currency'     => '',
             'availability' => '',
         ];
@@ -919,7 +1111,73 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
             }
         }
 
+        // 3. B2B Price Anchoring: Calculate explicit Netto / Brutto & VAT
+        if ($meta['is_product'] || !empty($meta['price'])) {
+            $this->parseB2bPricing($meta, $xpath);
+        }
+
         return $meta;
+    }
+
+    /**
+     * Parse and anchor B2B pricing (explicit Netto, Brutto and 23% VAT separation).
+     */
+    private function parseB2bPricing(array &$meta, \DOMXPath $xpath): void
+    {
+        $priceText = '';
+        $priceNodes = $xpath->query('//*[contains(@class, "ba-item-product-price")]|//*[contains(@class, "ba-product-price")]|//*[contains(@class, "product-price")]');
+        if ($priceNodes && $priceNodes->length > 0) {
+            foreach ($priceNodes as $node) {
+                $priceText .= ' ' . $node->textContent;
+            }
+        }
+
+        $currency = !empty($meta['currency']) ? $meta['currency'] : 'PLN';
+        $priceNet = null;
+        $priceGross = null;
+
+        // Try extracting explicit Netto from text
+        if (preg_match('/(?:cena\s+netto|netto)[\s:]*([0-9\s]+(?:[,\.][0-9]{2})?)/i', $priceText, $mNet)) {
+            $priceNet = (float) str_replace([' ', ','], ['', '.'], $mNet[1]);
+        } elseif (preg_match('/([0-9\s]+(?:[,\.][0-9]{2})?)\s*(?:zł|pln)?\s*netto/i', $priceText, $mNet)) {
+            $priceNet = (float) str_replace([' ', ','], ['', '.'], $mNet[1]);
+        }
+
+        // Try extracting explicit Brutto from text
+        if (preg_match('/(?:cena\s+brutto|brutto)[\s:]*([0-9\s]+(?:[,\.][0-9]{2})?)/i', $priceText, $mGross)) {
+            $priceGross = (float) str_replace([' ', ','], ['', '.'], $mGross[1]);
+        } elseif (preg_match('/([0-9\s]+(?:[,\.][0-9]{2})?)\s*(?:zł|pln)?\s*brutto/i', $priceText, $mGross)) {
+            $priceGross = (float) str_replace([' ', ','], ['', '.'], $mGross[1]);
+        }
+
+        // Fallback calculation using 23% standard Polish VAT
+        if ($priceNet === null && !empty($meta['price'])) {
+            $rawPrice = (float) str_replace([' ', ','], ['', '.'], preg_replace('/[^0-9,\.]/', '', $meta['price']));
+            if ($rawPrice > 0) {
+                if (stripos($priceText, 'brutto') !== false && stripos($priceText, 'netto') === false) {
+                    $priceGross = $rawPrice;
+                    $priceNet   = round($priceGross / 1.23, 2);
+                } else {
+                    $priceNet   = $rawPrice;
+                    $priceGross = round($priceNet * 1.23, 2);
+                }
+            }
+        } elseif ($priceNet !== null && $priceGross === null) {
+            $priceGross = round($priceNet * 1.23, 2);
+        } elseif ($priceGross !== null && $priceNet === null) {
+            $priceNet = round($priceGross / 1.23, 2);
+        }
+
+        if ($priceNet !== null && $priceGross !== null) {
+            $meta['price_net']   = number_format($priceNet, 2, '.', '');
+            $meta['price_gross'] = number_format($priceGross, 2, '.', '');
+            $meta['vat_rate']    = '23%';
+            $meta['currency']    = $currency;
+
+            $netFormatted   = number_format($priceNet, 2, ',', ' ');
+            $grossFormatted = number_format($priceGross, 2, ',', ' ');
+            $meta['price']  = "{$netFormatted} {$currency} netto ({$grossFormatted} {$currency} brutto, 23% VAT)";
+        }
     }
 
     private function buildYamlFrontmatter(array $meta, array $pdfUrls = []): string
@@ -930,18 +1188,20 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         $yaml = "---\n";
         $orderedKeys = [
-            'title'        => 'title',
+            'title'        => $meta['title'] ?? '',
             'type'         => $meta['is_product'] ? 'product' : 'article',
             'sku'          => $meta['sku'] ?? '',
             'brand'        => $meta['brand'] ?? '',
             'price'        => $meta['price'] ?? '',
+            'price_net'    => $meta['price_net'] ?? '',
+            'price_gross'  => $meta['price_gross'] ?? '',
+            'vat_rate'     => $meta['vat_rate'] ?? '',
             'currency'     => $meta['currency'] ?? '',
             'availability' => $meta['availability'] ?? '',
             'category'     => $meta['category'] ?? '',
             'url'          => $meta['url'] ?? '',
         ];
 
-        // Inject merchant metadata if enabled
         if ((bool) $this->params->get('enable_merchant_context', 1)) {
             $sellerName = trim((string) $this->params->get('merchant_name', ''));
             $sellerType = trim((string) $this->params->get('merchant_type', ''));
@@ -955,9 +1215,6 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
         }
 
         foreach ($orderedKeys as $key => $val) {
-            if ($key === 'title') {
-                $val = $meta['title'] ?? '';
-            }
             if (!empty($val)) {
                 $cleanVal = trim(preg_replace('/\s+/', ' ', (string) $val));
                 $cleanVal = str_replace(['\\', '"'], ['\\\\', '\"'], $cleanVal);
@@ -1089,64 +1346,170 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface
 
         return $output . "\n";
     }
+    /**
+     * Check if /llms.txt needs to be regenerated based on configured interval.
+     */
+    private function checkAutomatedLlmsRegeneration(): void
+    {
+        $filePath = JPATH_SITE . '/llms.txt';
+        $interval = (int) $this->params->get('llms_auto_interval', 86400);
+
+        if (!is_file($filePath) || (time() - filemtime($filePath) > $interval)) {
+            $this->generateLlmsTxtFile();
+        }
+    }
 
     /**
-     * Wstrzyknij skrót do wtyczki bezpośrednio do menu bocznego administratora (Komponenty).
-     * Działa natywnie w Joomla 5 i 6 bez modyfikowania bazy danych!
+     * Generate the /llms.txt file in the site root directory according to https://llmstxt.org.
      */
-    public function onAfterBuildAdminMenu(): void
+    public function generateLlmsTxtFile(): array
     {
-        $app = $this->getApplication();
+        try {
+            $siteTitle   = trim((string) $this->params->get('llms_site_title', 'Merserwis'));
+            $siteSummary = trim((string) $this->params->get('llms_site_summary', ''));
+            $rootUri     = rtrim(Uri::root(), '/');
 
-        if (!$app->isClient('administrator')) {
-            return;
+            // Parse excluded URLs
+            $rawExcludes = (string) $this->params->get('llms_exclude_urls', '');
+            $excludeList = [];
+            if (!empty(trim($rawExcludes))) {
+                foreach (preg_split('/\r\n|\r|\n/', $rawExcludes) as $line) {
+                    $clean = trim($line);
+                    if ($clean !== '') {
+                        $excludeList[] = str_replace($rootUri, '', $clean);
+                    }
+                }
+            }
+
+            $txt = "# " . $siteTitle . "\n\n";
+
+            if (!empty($siteSummary)) {
+                $txt .= "> " . str_replace(["\r", "\n"], ' ', $siteSummary) . "\n\n";
+            }
+
+            $db = Factory::getDbo();
+
+            // 1. Core Pages (Główne sekcje z menu Joomla)
+            $query = $db->getQuery(true)
+                ->select(['title', 'link', 'alias'])
+                ->from($db->quoteName('#__menu'))
+                ->where($db->quoteName('client_id') . ' = 0')
+                ->where($db->quoteName('published') . ' = 1')
+                ->where($db->quoteName('parent_id') . ' = 1')
+                ->where($db->quoteName('menutype') . ' = ' . $db->quote('main'))
+                ->order($db->quoteName('lft') . ' ASC');
+            $db->setQuery($query);
+            $menuItems = $db->loadAssocList() ?: [];
+
+            if (!empty($menuItems)) {
+                $txt .= "## Główne sekcje\n\n";
+                foreach ($menuItems as $item) {
+                    $url = $rootUri . '/' . $item['alias'];
+                    if ($this->isUrlExcluded($url, $excludeList)) {
+                        continue;
+                    }
+                    $txt .= "- [" . $item['title'] . "](" . $url . "): Główne informacje i oferta serwisu.\n";
+                }
+                $txt .= "\n";
+            }
+
+            // 2. Balbooa Gridbox Categories
+            $tables = $db->getTableList();
+            if (in_array($db->replacePrefix('#__gridbox_categories'), $tables, true)) {
+                $query = $db->getQuery(true)
+                    ->select(['title', 'alias'])
+                    ->from($db->quoteName('#__gridbox_categories'))
+                    ->where($db->quoteName('published') . ' = 1')
+                    ->order($db->quoteName('id') . ' ASC');
+                $db->setQuery($query);
+                $categories = $db->loadAssocList() ?: [];
+
+                if (!empty($categories)) {
+                    $txt .= "## Kategorie i Oferta\n\n";
+                    foreach ($categories as $cat) {
+                        $url = $rootUri . '/' . $cat['alias'];
+                        if ($this->isUrlExcluded($url, $excludeList)) {
+                            continue;
+                        }
+                        $txt .= "- [" . $cat['title'] . "](" . $url . "): Katalog urządzeń i aparatury pomiarowej.\n";
+                    }
+                    $txt .= "\n";
+                }
+            }
+
+            // 3. Balbooa Gridbox Products
+            if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
+                $query = $db->getQuery(true)
+                    ->select(['p.title', 'p.alias', 'c.alias AS cat_alias', 'p.intro_text'])
+                    ->from($db->quoteName('#__gridbox_pages', 'p'))
+                    ->leftJoin($db->quoteName('#__gridbox_categories', 'c') . ' ON p.category_id = c.id')
+                    ->where($db->quoteName('p.published') . ' = 1')
+                    ->where($db->quoteName('p.page_category') . ' = ' . $db->quote('product'))
+                    ->order('p.id DESC')
+                    ->setLimit(150);
+                $db->setQuery($query);
+                $products = $db->loadAssocList() ?: [];
+
+                if (!empty($products)) {
+                    $txt .= "## Wybrane produkty i aparatura pomiarowa\n\n";
+                    foreach ($products as $prod) {
+                        $prodPath = (!empty($prod['cat_alias']) ? $prod['cat_alias'] . '/' : '') . $prod['alias'];
+                        $url = $rootUri . '/' . $prodPath;
+
+                        if ($this->isUrlExcluded($url, $excludeList)) {
+                            continue;
+                        }
+
+                        $desc = !empty($prod['intro_text']) ? strip_tags($prod['intro_text']) : 'Profesjonalny przyrząd pomiarowy z polską gwarancją i opcją wzorcowania.';
+                        $desc = trim(preg_replace('/\s+/', ' ', $desc));
+                        if (mb_strlen($desc) > 120) {
+                            $desc = mb_substr($desc, 0, 117) . '...';
+                        }
+
+                        $txt .= "- [" . $prod['title'] . "](" . $url . "): " . $desc . "\n";
+                    }
+                    $txt .= "\n";
+                }
+            }
+
+            // Save to physical file JPATH_SITE/llms.txt
+            $targetPath = JPATH_SITE . '/llms.txt';
+            $success = @file_put_contents($targetPath, $txt, LOCK_EX);
+
+            if ($success === false) {
+                return ['success' => false, 'message' => 'Nie można zapisać pliku na dysku. Sprawdź uprawnienia do zapisu w katalogu głównym witryny.'];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Plik /llms.txt został pomyślnie wygenerowany!',
+                'date'    => date('Y-m-d H:i:s'),
+                'size'    => round(filesize($targetPath) / 1024, 2) . ' KB'
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Błąd generowania: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Check if a given URL matches any rule in the exclude list.
+     */
+    private function isUrlExcluded(string $url, array $excludeList): bool
+    {
+        if (empty($excludeList)) {
+            return false;
         }
 
-        // Sprawdź uprawnienia do edycji dodatków
-        if (!$app->getIdentity()->authorise('core.edit', 'com_plugins')) {
-            return;
+        foreach ($excludeList as $rule) {
+            $rule = trim($rule);
+            if ($rule === '') {
+                continue;
+            }
+            if (stripos($url, $rule) !== false) {
+                return true;
+            }
         }
 
-        $menu = $app->getMenu('administrator');
-        if (!$menu) {
-            return;
-        }
-
-        // Znajdź ID wtyczki
-        $db = \Joomla\CMS\Factory::getDbo();
-        $query = $db->getQuery(true)
-            ->select($db->quoteName('extension_id'))
-            ->from($db->quoteName('#__extensions'))
-            ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
-            ->where($db->quoteName('element') . ' = ' . $db->quote('aimarkdown'));
-        $db->setQuery($query);
-        $pluginId = (int) $db->loadResult();
-
-        if (!$pluginId) {
-            return;
-        }
-
-        $targetUrl = 'index.php?option=com_plugins&task=plugin.edit&extension_id=' . $pluginId;
-
-        // Utwórz węzeł menu w sekcji Komponenty
-        $componentsItem = $menu->getItem('components');
-        $parentId = $componentsItem ? $componentsItem->id : 1;
-
-        $menuItem = new \stdClass();
-        $menuItem->id        = 999999;
-        $menuItem->menutype  = 'main';
-        $menuItem->title     = 'AI Markdown for Gridbox';
-        $menuItem->alias     = 'ai-markdown-for-gridbox';
-        $menuItem->link      = $targetUrl;
-        $menuItem->type      = 'url';
-        $menuItem->published = 1;
-        $menuItem->parent_id = $parentId;
-        $menuItem->level     = 2;
-        $menuItem->access    = 1;
-        $menuItem->icon      = 'icon-robot';
-        $menuItem->class     = 'class:robot';
-
-        // Dołącz pozycję do drzewa menu
-        $menu->addItem($menuItem);
+        return false;
     }
 }

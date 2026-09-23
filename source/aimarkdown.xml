@@ -4,11 +4,11 @@
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
     <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
-    <creationDate>2026-09-22</creationDate>
+    <creationDate>2026-09-23</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.4.1</version>
-    <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with high-performance caching, YAML Frontmatter, Merchant Authority Injection, Tab/Accordion unrolling, PDF prioritization, and local AI analytics.</description>
+    <version>1.5.0</version>
+    <description>Native Markdown plugin for Joomla 6 and PHP 8.5 with llmstxt.org generator, B2B Price Anchoring, caching, YAML Frontmatter, hybrid FAQ, and AI analytics.</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
     
@@ -35,10 +35,37 @@
                     name="enable_frontmatter"
                     type="radio"
                     label="Enable YAML Frontmatter"
-                    description="Prepend structured YAML metadata (title, price, SKU, availability, category, downloads, seller) at the top of the Markdown for LLMs."
+                    description="Prepend structured YAML metadata (title, price, B2B net/gross, SKU, availability, category, downloads, seller) at the top of the Markdown for LLMs."
                     layout="joomla.form.field.radio.switcher"
                     default="1"
                     filter="integer"
+                >
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="enable_faq"
+                    type="radio"
+                    label="Enable Product FAQ Section"
+                    description="Include structured FAQ in Markdown. Prioritizes custom FAQPage Schema/details from description; auto-generates contextual Q&amp;A if missing."
+                    layout="joomla.form.field.radio.switcher"
+                    default="1"
+                    filter="integer"
+                >
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="auto_generate_faq"
+                    type="radio"
+                    label="Auto-generate Missing FAQs"
+                    description="If a product lacks a custom FAQ section, automatically generate smart Q&amp;A (warranty, calibration, delivery, applications)."
+                    layout="joomla.form.field.radio.switcher"
+                    default="1"
+                    filter="integer"
+                    showon="enable_faq:1"
                 >
                     <option value="0">JNO</option>
                     <option value="1">JYES</option>
@@ -214,6 +241,75 @@
                 </field>
             </fieldset>
 
+            <fieldset name="llmstxt" label="LLMS.txt" addfieldprefix="Merserwis\Plugin\System\AiMarkdown\Field">
+                <field
+                    name="enable_llmstxt"
+                    type="radio"
+                    label="Enable /llms.txt Generator"
+                    description="Automatically generates and maintains a standardized /llms.txt file in the site root directory according to https://llmstxt.org."
+                    layout="joomla.form.field.radio.switcher"
+                    default="0"
+                    filter="integer"
+                >
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="llms_site_title"
+                    type="text"
+                    label="Site / Project Title (H1)"
+                    description="The main title displayed at the top of /llms.txt."
+                    default="Merserwis - Aparatura Pomiarowa i Laboratorium Wzorcujące"
+                    showon="enable_llmstxt:1"
+                />
+
+                <field
+                    name="llms_site_summary"
+                    type="textarea"
+                    label="Short Summary Blockquote (>)"
+                    description="A concise 2-3 sentence overview of the company, accreditation, and offering for LLMs."
+                    default="Oficjalny dystrybutor profesjonalnej aparatury kontrolno-pomiarowej oraz akredytowane laboratorium wzorcujące w Polsce. Pomiary instalacji elektrycznych, stacji ładowania EVSE, analizatory zasilania i kompleksowe wzorcowanie przyrządów."
+                    rows="3"
+                    cols="50"
+                    filter="raw"
+                    showon="enable_llmstxt:1"
+                />
+
+                <field
+                    name="llms_auto_interval"
+                    type="list"
+                    label="Auto-generation Interval"
+                    description="Time interval between automated background regenerations of the /llms.txt file."
+                    default="86400"
+                    showon="enable_llmstxt:1"
+                >
+                    <option value="43200">Every 12 Hours</option>
+                    <option value="86400">Every 24 Hours (Daily)</option>
+                    <option value="432000">Every 5 Days</option>
+                    <option value="1296000">Every 15 Days</option>
+                    <option value="2592000">Every 30 Days (Monthly)</option>
+                </field>
+
+                <field
+                    name="llms_exclude_urls"
+                    type="textarea"
+                    label="Exclude URLs from /llms.txt"
+                    description="Enter URLs or paths to exclude from /llms.txt, one per line (e.g. /koszyk, /polityka-prywatnosci, /logowanie)."
+                    hint="/koszyk&#10;/regulamin&#10;/polityka-prywatnosci"
+                    rows="4"
+                    cols="50"
+                    filter="raw"
+                    showon="enable_llmstxt:1"
+                />
+
+                <field
+                    name="llms_action_dashboard"
+                    type="llmsgenerator"
+                    showon="enable_llmstxt:1"
+                />
+            </fieldset>
+
             <fieldset name="merchant" label="Merchant &amp; CTA">
                 <field
                     name="enable_merchant_context"
@@ -232,7 +328,7 @@
                     name="merchant_info_legend"
                     type="note"
                     label="How this helps your AI Rankings (GEO) &amp; Available Tags"
-                    description="&lt;div class=&quot;mb-2&quot;&gt;&lt;strong&gt;Why is this crucial for AI?&lt;/strong&gt; LLMs (SearchGPT, Perplexity, Claude) prefer recommending merchants who explicitly declare distributor status, local warranty, fast delivery, and calibration services rather than generic manufacturer pages.&lt;/div&gt;&lt;div class=&quot;mb-1&quot;&gt;&lt;strong&gt;Dynamic Tags Legend (Automatically replaced):&lt;/strong&gt;&lt;/div&gt;&lt;ul class=&quot;small mb-2&quot;&gt;&lt;li&gt;&lt;code&gt;{title}&lt;/code&gt; - Product / Article Title&lt;/li&gt;&lt;li&gt;&lt;code&gt;{sku}&lt;/code&gt; - Catalog Code / SKU Number&lt;/li&gt;&lt;li&gt;&lt;code&gt;{price}&lt;/code&gt; - Current Price&lt;/li&gt;&lt;li&gt;&lt;code&gt;{currency}&lt;/code&gt; - Currency (e.g. PLN, EUR)&lt;/li&gt;&lt;li&gt;&lt;code&gt;{availability}&lt;/code&gt; - Stock Status (e.g. InStock)&lt;/li&gt;&lt;li&gt;&lt;code&gt;{brand}&lt;/code&gt; - Manufacturer / Brand Name&lt;/li&gt;&lt;li&gt;&lt;code&gt;{category}&lt;/code&gt; - Product Category&lt;/li&gt;&lt;li&gt;&lt;code&gt;{url}&lt;/code&gt; - Full Absolute Canonical URL&lt;/li&gt;&lt;/ul&gt;"
+                    description="&lt;div class=&quot;mb-2&quot;&gt;&lt;strong&gt;Why is this crucial for AI?&lt;/strong&gt; LLMs (SearchGPT, Perplexity, Claude) prefer recommending merchants who explicitly declare distributor status, local warranty, fast delivery, and calibration services rather than generic manufacturer pages.&lt;/div&gt;&lt;div class=&quot;mb-1&quot;&gt;&lt;strong&gt;Dynamic Tags Legend (Automatically replaced):&lt;/strong&gt;&lt;/div&gt;&lt;ul class=&quot;small mb-2&quot;&gt;&lt;li&gt;&lt;code&gt;{title}&lt;/code&gt; - Product / Article Title&lt;/li&gt;&lt;li&gt;&lt;code&gt;{sku}&lt;/code&gt; - Catalog Code / SKU Number&lt;/li&gt;&lt;li&gt;&lt;code&gt;{price}&lt;/code&gt; - Formatted Price with Net/Gross &amp; VAT&lt;/li&gt;&lt;li&gt;&lt;code&gt;{price_net}&lt;/code&gt; - Net Price only&lt;/li&gt;&lt;li&gt;&lt;code&gt;{price_gross}&lt;/code&gt; - Gross Price only&lt;/li&gt;&lt;li&gt;&lt;code&gt;{currency}&lt;/code&gt; - Currency (e.g. PLN, EUR)&lt;/li&gt;&lt;li&gt;&lt;code&gt;{availability}&lt;/code&gt; - Stock Status (e.g. InStock)&lt;/li&gt;&lt;li&gt;&lt;code&gt;{brand}&lt;/code&gt; - Manufacturer / Brand Name&lt;/li&gt;&lt;li&gt;&lt;code&gt;{category}&lt;/code&gt; - Product Category&lt;/li&gt;&lt;li&gt;&lt;code&gt;{url}&lt;/code&gt; - Full Absolute Canonical URL&lt;/li&gt;&lt;/ul&gt;"
                     class="alert alert-info"
                     showon="enable_merchant_context:1"
                 />
@@ -272,7 +368,7 @@
                     type="textarea"
                     label="Footer CTA &amp; Ordering Info (Below Content)"
                     description="Markdown text appended at the very end of the content. Ideal for order instructions, delivery times, and direct contact numbers."
-                    hint="### Zamówienia i doradztwo techniczne&#10;* **Dystrybutor:** Nazwa Twojej Firmy&#10;* **Produkt:** {title} (SKU: {sku})&#10;* **Dostępność i zamówienia:** [Zamów ten model online]({url})&#10;* **Czas dostawy:** Wysyłka z magazynu w 24-48h.&#10;* **Kontakt handlowy:** Zadzwoń: +48 ... | E-mail: ..."
+                    hint="### Zamówienia i doradztwo techniczne&#10;* **Dystrybutor:** Nazwa Twojej Firmy&#10;* **Produkt:** {title} (SKU: {sku})&#10;* **Cena:** {price}&#10;* **Dostępność i zamówienia:** [Zamów ten model online]({url})&#10;* **Czas dostawy:** Wysyłka z magazynu w 24-48h.&#10;* **Kontakt handlowy:** Zadzwoń: +48 ... | E-mail: ..."
                     rows="7"
                     cols="50"
                     filter="raw"
