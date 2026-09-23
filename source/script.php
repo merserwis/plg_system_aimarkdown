@@ -5,7 +5,6 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Filesystem\File;
 use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Installer\InstallerScript;
-use Joomla\CMS\Table\Table;
 
 /**
  * Installation and update script for System - AI Markdown for Gridbox plugin.
@@ -16,214 +15,37 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
     {
         $this->setPluginPosition();
         $this->createAnalyticsTable();
-        $this->installDashboardModule();
-        $this->registerComponentProxyAndMenu();
+        $this->removeObsoleteFiles();
     }
 
     public function update($parent): void
     {
         $this->setPluginPosition();
         $this->createAnalyticsTable();
-        $this->installDashboardModule();
-        $this->registerComponentProxyAndMenu();
+        $this->removeObsoleteFiles();
     }
 
     public function postflight(string $type, $parent): void
     {
         $this->setPluginPosition();
         $this->createAnalyticsTable();
-        $this->installDashboardModule();
-        $this->registerComponentProxyAndMenu();
+        $this->removeObsoleteFiles();
         $this->clearJoomlaCache();
     }
 
-    public function uninstall($parent): void
-    {
-        $this->removeComponentProxyAndMenu();
-    }
-
     /**
-     * Rejestruje komponent proxy oraz poprawny węzeł drzewa w #__menu pod Komponentami
+     * Remove obsolete files from earlier versions.
      */
-    private function registerComponentProxyAndMenu(): void
+    private function removeObsoleteFiles(): void
     {
-        try {
-            $db = Factory::getDbo();
+        $obsoleteFiles = [
+            JPATH_SITE . '/plugins/system/aimarkdown/src/Field/LlmsGeneratorField.php',
+        ];
 
-            // 1. Zarejestruj com_aimarkdown w #__extensions jako type='component'
-            $query = $db->getQuery(true)
-                ->select($db->quoteName('extension_id'))
-                ->from($db->quoteName('#__extensions'))
-                ->where($db->quoteName('type') . ' = ' . $db->quote('component'))
-                ->where($db->quoteName('element') . ' = ' . $db->quote('com_aimarkdown'));
-            $db->setQuery($query);
-            $comId = (int) $db->loadResult();
-
-            if (!$comId) {
-                $comExt = new \stdClass();
-                $comExt->name           = 'com_aimarkdown';
-                $comExt->type           = 'component';
-                $comExt->element        = 'com_aimarkdown';
-                $comExt->folder         = '';
-                $comExt->client_id      = 1;
-                $comExt->enabled        = 1;
-                $comExt->access         = 1;
-                $comExt->protected      = 0;
-                $comExt->manifest_cache = json_encode([
-                    'name'        => 'com_aimarkdown',
-                    'type'        => 'component',
-                    'version'     => '1.4.0',
-                    'description' => 'AI Markdown for Gridbox Proxy',
-                ]);
-
-                $db->insertObject('#__extensions', $comExt, 'extension_id');
-                $comId = (int) $comExt->extension_id;
+        foreach ($obsoleteFiles as $file) {
+            if (is_file($file)) {
+                @unlink($file);
             }
-
-            // 2. Utwórz plik manifestu komponentu na dysku, aby Joomla go autoryzowała
-            $compDir = JPATH_ADMINISTRATOR . '/components/com_aimarkdown';
-            if (!is_dir($compDir)) {
-                Folder::create($compDir);
-            }
-
-            $manifestXml = '<?xml version="1.0" encoding="utf-8"?>' . "\n"
-                . '<extension type="component" client="administrator" method="upgrade">' . "\n"
-                . '    <name>com_aimarkdown</name>' . "\n"
-                . '    <version>1.4.0</version>' . "\n"
-                . '    <description>AI Markdown for Gridbox</description>' . "\n"
-                . '</extension>';
-            File::write($compDir . '/aimarkdown.xml', $manifestXml);
-
-            // 3. Sprawdź czy pozycja menu już istnieje w #__menu
-            $query = $db->getQuery(true)
-                ->select($db->quoteName('id'))
-                ->from($db->quoteName('#__menu'))
-                ->where($db->quoteName('client_id') . ' = 1')
-                ->where($db->quoteName('menutype') . ' = ' . $db->quote('main'))
-                ->where($db->quoteName('component_id') . ' = ' . $comId);
-            $db->setQuery($query);
-            $menuId = (int) $db->loadResult();
-
-            // Użyj natywnej klasy tabeli Joomla do wyliczenia gałęzi drzewa (lft/rgt)
-            $table = Table::getInstance('Menu', 'Joomla\\CMS\\Table\\');
-            if (!$table) {
-                $table = new \Joomla\CMS\Table\Menu($db);
-            }
-
-            if ($menuId) {
-                $table->load($menuId);
-                $table->published = 1;
-                $table->title     = 'AI Markdown for Gridbox';
-                $table->link      = 'index.php?option=com_aimarkdown';
-                $table->store();
-            } else {
-                $menuData = [
-                    'menutype'     => 'main',
-                    'title'        => 'AI Markdown for Gridbox',
-                    'alias'        => 'ai-markdown-gridbox',
-                    'link'         => 'index.php?option=com_aimarkdown',
-                    'type'         => 'component',
-                    'published'    => 1,
-                    'parent_id'    => 1,
-                    'component_id' => $comId,
-                    'client_id'    => 1,
-                    'access'       => 1,
-                    'img'          => 'class:robot',
-                    'language'     => '*',
-                ];
-
-                $table->setLocation(1, 'last-child');
-                $table->save($menuData);
-            }
-        } catch (\Throwable $e) {
-            // Ciche wyjście
-        }
-    }
-
-    private function removeComponentProxyAndMenu(): void
-    {
-        try {
-            $db = Factory::getDbo();
-
-            // Usuń z #__menu
-            $query = $db->getQuery(true)
-                ->delete($db->quoteName('#__menu'))
-                ->where($db->quoteName('link') . ' = ' . $db->quote('index.php?option=com_aimarkdown'))
-                ->where($db->quoteName('client_id') . ' = 1');
-            $db->setQuery($query);
-            $db->execute();
-
-            // Usuń z #__extensions
-            $query = $db->getQuery(true)
-                ->delete($db->quoteName('#__extensions'))
-                ->where($db->quoteName('element') . ' = ' . $db->quote('com_aimarkdown'))
-                ->where($db->quoteName('type') . ' = ' . $db->quote('component'));
-            $db->setQuery($query);
-            $db->execute();
-
-            // Usuń katalog
-            $compDir = JPATH_ADMINISTRATOR . '/components/com_aimarkdown';
-            if (is_dir($compDir)) {
-                Folder::delete($compDir);
-            }
-        } catch (\Throwable $e) {
-        }
-    }
-
-    private function installDashboardModule(): void
-    {
-        try {
-            $srcDir  = __DIR__ . '/modules/mod_aimarkdown_dashboard';
-            $destDir = JPATH_ADMINISTRATOR . '/modules/mod_aimarkdown_dashboard';
-
-            if (!is_dir($srcDir)) {
-                return;
-            }
-
-            if (!is_dir($destDir)) {
-                Folder::create($destDir);
-            }
-
-            File::copy($srcDir . '/mod_aimarkdown_dashboard.xml', $destDir . '/mod_aimarkdown_dashboard.xml');
-            File::copy($srcDir . '/mod_aimarkdown_dashboard.php', $destDir . '/mod_aimarkdown_dashboard.php');
-
-            $db = Factory::getDbo();
-
-            $query = $db->getQuery(true)
-                ->select($db->quoteName('id'))
-                ->from($db->quoteName('#__modules'))
-                ->where($db->quoteName('module') . ' = ' . $db->quote('mod_aimarkdown_dashboard'))
-                ->where($db->quoteName('client_id') . ' = 1');
-            $db->setQuery($query);
-            $modInstanceId = (int) $db->loadResult();
-
-            if (!$modInstanceId) {
-                $columns = ['title', 'content', 'ordering', 'position', 'checked_out', 'checked_out_time', 'published', 'module', 'numnews', 'access', 'showtitle', 'params', 'client_id', 'language'];
-                $values = [
-                    $db->quote('AI Crawler Monitor'),
-                    $db->quote(''),
-                    1,
-                    $db->quote('cpanel'),
-                    0,
-                    $db->quote('1970-01-01 00:00:00'),
-                    1,
-                    $db->quote('mod_aimarkdown_dashboard'),
-                    0,
-                    1,
-                    1,
-                    $db->quote('{}'),
-                    1,
-                    $db->quote('*')
-                ];
-
-                $query = $db->getQuery(true)
-                    ->insert($db->quoteName('#__modules'))
-                    ->columns($columns)
-                    ->values(implode(',', $values));
-                $db->setQuery($query);
-                $db->execute();
-            }
-        } catch (\Throwable $e) {
         }
     }
 
