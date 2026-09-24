@@ -2,9 +2,11 @@
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
+use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Router\Route;
+use Joomla\Database\DatabaseInterface;
 
-$db = Factory::getDbo();
+$db = Factory::getContainer()->get(DatabaseInterface::class);
 
 // Sprawdź czy tabela istnieje
 $tables = $db->getTableList();
@@ -13,30 +15,20 @@ if (!in_array($tableName, $tables, true)) {
     return;
 }
 
-// 1. Wizyty w ostatnich 24h
+// 1-3. Wizyty 24h / 30 dni / cache hit w jednym zapytaniu. Logi są w UTC, granice liczone w PHP
+// (niezależne od strefy czasowej i silnika bazy danych)
 $query = $db->getQuery(true)
-    ->select('COUNT(*)')
+    ->select([
+        'COALESCE(SUM(CASE WHEN ' . $db->quoteName('created_at') . ' >= ' . $db->quote(Factory::getDate('-24 hours')->toSql()) . ' THEN 1 ELSE 0 END), 0) AS ' . $db->quoteName('d1'),
+        'COUNT(*) AS ' . $db->quoteName('d30'),
+        'COALESCE(SUM(' . $db->quoteName('is_cache_hit') . '), 0) AS ' . $db->quoteName('hits'),
+    ])
     ->from($db->quoteName('#__aimarkdown_logs'))
-    ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 24 HOUR)');
-$db->setQuery($query);
-$visits24h = (int) $db->loadResult();
-
-// 2. Wizyty w ostatnich 30 dniach
-$query = $db->getQuery(true)
-    ->select('COUNT(*)')
-    ->from($db->quoteName('#__aimarkdown_logs'))
-    ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
-$db->setQuery($query);
-$visits30d = (int) $db->loadResult();
-
-// 3. Cache Hit Rate (30 dni)
-$query = $db->getQuery(true)
-    ->select('COUNT(*)')
-    ->from($db->quoteName('#__aimarkdown_logs'))
-    ->where($db->quoteName('is_cache_hit') . ' = 1')
-    ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
-$db->setQuery($query);
-$cacheHits = (int) $db->loadResult();
+    ->where($db->quoteName('created_at') . ' >= ' . $db->quote(Factory::getDate('-30 days')->toSql()));
+$counters  = $db->setQuery($query)->loadAssoc() ?: [];
+$visits24h = (int) ($counters['d1'] ?? 0);
+$visits30d = (int) ($counters['d30'] ?? 0);
+$cacheHits = (int) ($counters['hits'] ?? 0);
 $hitRate = $visits30d > 0 ? round(($cacheHits / $visits30d) * 100, 1) : 0;
 
 // 4. Ostatni bot
@@ -53,6 +45,7 @@ $query = $db->getQuery(true)
     ->select($db->quoteName('extension_id'))
     ->from($db->quoteName('#__extensions'))
     ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+    ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
     ->where($db->quoteName('element') . ' = ' . $db->quote('aimarkdown'));
 $db->setQuery($query);
 $pluginId = (int) $db->loadResult();
@@ -93,8 +86,8 @@ $settingsUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension
 
         <div class="small text-muted d-flex justify-content-between border-top pt-2">
             <span>Ostatnia wizyta:</span>
-            <span class="fw-semibold text-truncate ms-2" style="max-width: 60%;" title="<?php echo htmlspecialchars($lastBot['bot_name']); ?>">
-                <?php echo htmlspecialchars($lastBot['bot_name']); ?>
+            <span class="fw-semibold text-truncate ms-2" style="max-width: 60%;" title="<?php echo htmlspecialchars($lastBot['bot_name'] . ($lastBot['created_at'] !== '-' ? ' — ' . HTMLHelper::_('date', $lastBot['created_at'], 'Y-m-d H:i') : ''), ENT_QUOTES, 'UTF-8'); ?>">
+                <?php echo htmlspecialchars($lastBot['bot_name'], ENT_QUOTES, 'UTF-8'); ?>
             </span>
         </div>
     </div>
