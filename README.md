@@ -3,7 +3,7 @@
 [![Joomla Version](https://img.shields.io/badge/Joomla-5.x%20%7C%206.x-blue?style=for-the-badge&logo=joomla)](https://www.joomla.org)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%20--%208.5%2B-777BB4?style=for-the-badge&logo=php)](https://www.php.net)
 [![Standards](https://img.shields.io/badge/Standards-RFC%208288%20%7C%20llmstxt.org-orange?style=for-the-badge)](https://llmstxt.org)
-[![Version](https://img.shields.io/badge/Release-v1.5.1-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
+[![Version](https://img.shields.io/badge/Release-v1.5.2-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 A high-performance, native Joomla 5 and 6 extension suite designed to provide end-to-end **Generative Engine Optimization (GEO)**. It serves clean, machine-readable **Markdown** directly to AI search agents (**SearchGPT, OpenAI GPTBot, Anthropic Claude, Perplexity AI, Google Gemini, Apple Intelligence**) and automatically generates standardized **`/llms.txt`** domain maps.
