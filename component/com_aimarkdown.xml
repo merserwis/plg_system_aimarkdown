@@ -3,7 +3,7 @@
     <name>com_aimarkdown</name>
     <author>Merserwis</author>
     <creationDate>2026-09-24</creationDate>
-    <version>1.5.2</version>
+    <version>1.5.4</version>
     <description>AI Markdown for Gridbox</description>
     <administration>
         <menu img="class:robot">AI Markdown for Gridbox</menu>
