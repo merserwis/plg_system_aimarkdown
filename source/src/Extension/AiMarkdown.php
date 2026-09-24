@@ -1799,7 +1799,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $txt .= "## Główne sekcje\n\n" . $sectionContent . "\n";
         }
 
-        $useGridboxRouter = $this->params->get('llms_gridbox_url_mode', 'alias') === 'router';
+        $gridboxUrlMode   = (string) $this->params->get('llms_gridbox_url_mode', 'menu');
+        $useGridboxRouter = in_array($gridboxUrlMode, ['menu', 'router'], true);
+        $gridboxMenu      = $gridboxUrlMode === 'menu'
+            ? $this->loadGridboxMenuMap($db, $publicLevels, $rootUri)
+            : ['apps' => [], 'pages' => []];
 
         // 2. Balbooa Gridbox Categories & Apps
         if (in_array($db->replacePrefix('#__gridbox_categories'), $tables, true)) {
@@ -1827,7 +1831,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             foreach ($db->setQuery($query)->loadAssocList() ?: [] as $cat) {
                 $url = '';
                 if ($useGridboxRouter && !empty($cat['app_id'])) {
-                    $url = $this->siteLink('index.php?option=com_gridbox&view=blog&app=' . (int) $cat['app_id'] . '&id=' . (int) $cat['id']);
+                    $url = $this->gridboxLink(
+                        'index.php?option=com_gridbox&view=blog&app=' . (int) $cat['app_id'] . '&id=' . (int) $cat['id'],
+                        $gridboxMenu['apps'][(int) $cat['app_id']] ?? ''
+                    );
                 }
                 if ($url === '') {
                     $catSlug = !empty($cat['alias']) ? $cat['alias'] : OutputFilter::stringURLSafe($cat['title']);
@@ -1854,7 +1861,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
             $pageColumns  = $db->getTableColumns('#__gridbox_pages');
             $selectFields = ['p.id', 'p.title'];
-            foreach (['alias', 'intro_text', 'meta_description'] as $column) {
+            foreach (['alias', 'app_id', 'intro_text', 'meta_description'] as $column) {
                 if (isset($pageColumns[$column])) {
                     $selectFields[] = 'p.' . $column;
                 }
@@ -1889,7 +1896,16 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
             $sectionContent = '';
             foreach ($db->setQuery($query)->loadAssocList() ?: [] as $p) {
-                $url = $useGridboxRouter ? $this->siteLink('index.php?option=com_gridbox&view=page&id=' . (int) $p['id']) : '';
+                $url = '';
+                if (isset($gridboxMenu['pages'][(int) $p['id']])) {
+                    // The page has its own menu item: its menu route is the canonical URL.
+                    $url = $gridboxMenu['pages'][(int) $p['id']];
+                } elseif ($useGridboxRouter) {
+                    $url = $this->gridboxLink(
+                        'index.php?option=com_gridbox&view=page&id=' . (int) $p['id'],
+                        $gridboxMenu['apps'][(int) ($p['app_id'] ?? 0)] ?? ''
+                    );
+                }
                 if ($url === '') {
                     $slug = !empty($p['alias']) ? $p['alias'] : OutputFilter::stringURLSafe($p['title']);
                     $url  = $rootUri . '/' . $slug;
@@ -1973,6 +1989,118 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         }
 
         return is_string($url) ? $url : '';
+    }
+
+    /**
+     * SEF URL of a Gridbox page/category. Gridbox builds its own path segments, but when no menu item
+     * points at the Gridbox component Joomla prefixes them with "/component/gridbox" and appends
+     * "?Itemid=<home>". Gridbox resolves the same path from the site root, so the prefix and Itemid
+     * are dropped: /component/gridbox/cat/page?Itemid=101 -> /cat/page.
+     *
+     * $menuBase is the URL of the menu item that shows the page's Gridbox app (e.g. https://site/oferta).
+     * The canonical URL (and the one in Gridbox's sitemap) lives under it: /oferta/cat/page.
+     */
+    private function gridboxLink(string $internalUrl, string $menuBase = ''): string
+    {
+        $url = $this->cleanGridboxUrl($this->siteLink($internalUrl));
+        if ($url === '' || $menuBase === '') {
+            return $url;
+        }
+
+        $parts    = parse_url($url);
+        $baseParts = parse_url($menuBase);
+        if ($parts === false || $baseParts === false) {
+            return $url;
+        }
+
+        $basePath = rtrim((string) ($baseParts['path'] ?? ''), '/');
+        $path     = (string) ($parts['path'] ?? '/');
+        if ($basePath === '' || $path === $basePath || str_starts_with($path, $basePath . '/')) {
+            return $url;
+        }
+
+        return rtrim($menuBase, '/') . $path
+            . (isset($parts['query']) ? '?' . $parts['query'] : '')
+            . (isset($parts['fragment']) ? '#' . $parts['fragment'] : '');
+    }
+
+    /**
+     * Public site menu items pointing at Gridbox: app id => URL of the item showing the whole app
+     * (view=blog&app=N without a category) and page id => URL of the item showing that page.
+     *
+     * @return array{apps: array<int, string>, pages: array<int, string>}
+     */
+    private function loadGridboxMenuMap(DatabaseInterface $db, array $publicLevels, string $rootUri): array
+    {
+        $map = ['apps' => [], 'pages' => []];
+
+        try {
+            $query = $db->getQuery(true)
+                ->select($db->quoteName(['id', 'link', 'path', 'home']))
+                ->from($db->quoteName('#__menu'))
+                ->where($db->quoteName('client_id') . ' = 0')
+                ->where($db->quoteName('published') . ' = 1')
+                ->where($db->quoteName('type') . ' = ' . $db->quote('component'))
+                ->where($db->quoteName('link') . ' LIKE ' . $db->quote('index.php?option=com_gridbox&%'))
+                ->where($db->quoteName('access') . ' IN (' . implode(',', $publicLevels) . ')')
+                ->order($db->quoteName('level') . ' ASC, ' . $db->quoteName('lft') . ' ASC');
+            $items = $db->setQuery($query)->loadAssocList() ?: [];
+        } catch (\Throwable $e) {
+            return $map;
+        }
+
+        foreach ($items as $item) {
+            $vars = [];
+            parse_str((string) parse_url((string) $item['link'], PHP_URL_QUERY), $vars);
+            $view = (string) ($vars['view'] ?? '');
+
+            if ($view === 'blog' && !empty($vars['app']) && empty($vars['id'])) {
+                $key = 'apps';
+                $id  = (int) $vars['app'];
+            } elseif ($view === 'page' && !empty($vars['id'])) {
+                $key = 'pages';
+                $id  = (int) $vars['id'];
+            } else {
+                continue;
+            }
+
+            if (isset($map[$key][$id])) {
+                continue;
+            }
+
+            $map[$key][$id] = $this->siteLink('index.php?Itemid=' . (int) $item['id'])
+                ?: ((int) $item['home'] === 1 ? $rootUri . '/' : $rootUri . '/' . $item['path']);
+        }
+
+        return $map;
+    }
+
+    private function cleanGridboxUrl(string $url): string
+    {
+        if ($url === '' || !preg_match('#/component/gridbox(?=[/?\#]|$)#i', $url)) {
+            return $url;
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false) {
+            return $url;
+        }
+
+        $path = preg_replace('#/component/gridbox(?=/|$)#i', '', $parts['path'] ?? '', 1);
+        $path = ($path === '' || $path === null) ? '/' : $path;
+
+        $query = [];
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $query);
+            unset($query['Itemid']);
+        }
+
+        return (isset($parts['scheme']) ? $parts['scheme'] . '://' : '')
+            . ($parts['host'] ?? '')
+            . (isset($parts['port']) ? ':' . $parts['port'] : '')
+            . $path
+            . ($query ? '?' . http_build_query($query) : '')
+            . (isset($parts['fragment']) ? '#' . $parts['fragment'] : '');
     }
 
     private function truncate(string $text, int $length): string

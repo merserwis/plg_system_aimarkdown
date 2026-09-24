@@ -2,7 +2,7 @@
 <extension type="package" version="6.0" method="upgrade">
     <name>AI Markdown for Gridbox Package</name>
     <packagename>aimarkdown</packagename>
-    <version>1.5.2</version>
+    <version>1.5.4</version>
     <creationDate>2026-09-24</creationDate>
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>

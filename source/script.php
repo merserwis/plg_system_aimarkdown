@@ -12,6 +12,18 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
     protected $minimumPhp    = '8.2.0';
     protected $minimumJoomla = '5.0.0';
 
+    /** Version installed before this update ('' on a fresh install). */
+    private string $previousVersion = '';
+
+    public function preflight($type, $parent): bool
+    {
+        if ($type === 'update') {
+            $this->previousVersion = $this->getInstalledVersion();
+        }
+
+        return parent::preflight($type, $parent);
+    }
+
     public function postflight(string $type, $parent): void
     {
         if ($type === 'uninstall') {
@@ -20,6 +32,10 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
 
         $this->createAnalyticsTable();
         $this->removeObsoleteFiles();
+
+        if ($type === 'update' && $this->previousVersion !== '' && version_compare($this->previousVersion, '1.5.4', '<')) {
+            $this->migrateGridboxUrlMode();
+        }
 
         // Ordering + enabling only on a fresh install: an update must not re-enable a plugin
         // the administrator switched off, nor move it after the admin changed the order.
@@ -46,6 +62,57 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
     private function getDatabase(): DatabaseInterface
     {
         return Factory::getContainer()->get(DatabaseInterface::class);
+    }
+
+    private function getInstalledVersion(): string
+    {
+        try {
+            $db    = $this->getDatabase();
+            $query = $db->getQuery(true)
+                ->select($db->quoteName('manifest_cache'))
+                ->from($db->quoteName('#__extensions'))
+                ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+                ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
+                ->where($db->quoteName('element') . ' = ' . $db->quote('aimarkdown'));
+            $manifest = json_decode((string) $db->setQuery($query)->loadResult(), true);
+
+            return is_array($manifest) ? (string) ($manifest['version'] ?? '') : '';
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
+    /**
+     * 1.5.2 shipped llms_gridbox_url_mode = "alias" (404 links for pages under app/category paths) and
+     * 1.5.3 "router" (working links, but outside the app's menu item, so not the canonical URL).
+     * From 1.5.4 "menu" (canonical, e.g. /oferta/...) is the default; switch installs on either.
+     */
+    private function migrateGridboxUrlMode(): void
+    {
+        try {
+            $db    = $this->getDatabase();
+            $where = [
+                $db->quoteName('type') . ' = ' . $db->quote('plugin'),
+                $db->quoteName('folder') . ' = ' . $db->quote('system'),
+                $db->quoteName('element') . ' = ' . $db->quote('aimarkdown'),
+            ];
+            $query  = $db->getQuery(true)->select($db->quoteName('params'))->from($db->quoteName('#__extensions'))->where($where);
+            $params = json_decode((string) $db->setQuery($query)->loadResult(), true);
+
+            if (!is_array($params) || !in_array($params['llms_gridbox_url_mode'] ?? 'alias', ['alias', 'router'], true)) {
+                return;
+            }
+
+            $params['llms_gridbox_url_mode'] = 'menu';
+            $query = $db->getQuery(true)
+                ->update($db->quoteName('#__extensions'))
+                ->set($db->quoteName('params') . ' = ' . $db->quote(json_encode($params)))
+                ->where($where);
+            $db->setQuery($query)->execute();
+
+            Factory::getApplication()->enqueueMessage('AI Markdown: Gridbox URL Mode przełączony na „Canonical (menu item + router)” — linki jak w sitemap, np. /oferta/…. Wygeneruj ponownie llms.txt.', 'notice');
+        } catch (\Throwable $e) {
+        }
     }
 
     private function removeObsoleteFiles(): void
