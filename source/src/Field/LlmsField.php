@@ -3,7 +3,9 @@ namespace Merserwis\Plugin\System\AiMarkdown\Field;
 
 defined('_JEXEC') or die;
 
+use Joomla\CMS\Factory;
 use Joomla\CMS\Form\FormField;
+use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Session\Session;
 use Joomla\CMS\Uri\Uri;
 
@@ -16,10 +18,10 @@ class LlmsField extends FormField
 
     protected function getInput(): string
     {
-        $filePath   = JPATH_SITE . '/llms.txt';
+        $filePath   = JPATH_ROOT . '/llms.txt';
         $fileExists = is_file($filePath);
         $fileSize   = $fileExists ? round(filesize($filePath) / 1024, 2) . ' KB' : '0 KB';
-        $fileDate   = $fileExists ? date('Y-m-d H:i:s', filemtime($filePath)) : 'Not generated yet';
+        $fileDate   = $fileExists ? HTMLHelper::_('date', Factory::getDate('@' . filemtime($filePath))->toSql(), 'Y-m-d H:i:s') : 'Not generated yet';
         $fileUrl    = Uri::root() . 'llms.txt';
 
         // Policz linki w istniejącym pliku
@@ -115,7 +117,7 @@ class LlmsField extends FormField
             progressWrapper.style.display = 'block';
             msgBox.style.display = 'none';
 
-            const token = '<?php echo $token; ?>';
+            const token = <?php echo json_encode($token); ?>;
             const url = 'index.php?aimarkdown_action=generate_llmstxt&' + token + '=1';
 
             fetch(url, {

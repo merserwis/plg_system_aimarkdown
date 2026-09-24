@@ -5,8 +5,9 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Form\FormField;
-use Joomla\CMS\Router\Route;
+use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Session\Session;
+use Joomla\Database\DatabaseInterface;
 
 /**
  * Custom form field rendering the AI Bot Analytics Dashboard inside Joomla plugin settings.
@@ -18,49 +19,41 @@ class AnalyticsField extends FormField
     protected function getInput(): string
     {
         $app = Factory::getApplication();
-        $db  = Factory::getDbo();
+        $db  = Factory::getContainer()->get(DatabaseInterface::class);
 
-        // Security check
-        if (!$app->getIdentity()->authorise('core.edit', 'com_plugins')) {
+        $user = $app->getIdentity();
+        if (!$user || !$user->authorise('core.edit', 'com_plugins')) {
             return '';
         }
 
-        // 1. Verify database table exists
-        $tables = $db->getTableList();
+        $tables    = $db->getTableList();
         $tableName = $db->replacePrefix('#__aimarkdown_logs');
         if (!in_array($tableName, $tables, true)) {
             return '<div class="alert alert-info">Analytics table not yet created. Re-save or re-install plugin to initialize.</div>';
         }
 
-        $extensionId = (int) $app->input->get('extension_id', 0);
-
-        // 2. Handle Clear Statistics Action (CSRF Protected)
-        if ($app->input->get('action') === 'clear_ai_logs' && Session::checkToken('get')) {
-            try {
-                $db->setQuery('TRUNCATE TABLE ' . $db->quoteName('#__aimarkdown_logs'))->execute();
-            } catch (\Throwable $e) {
-                $db->setQuery('DELETE FROM ' . $db->quoteName('#__aimarkdown_logs'))->execute();
-            }
-
-            $app->enqueueMessage('AI visit statistics have been cleared successfully.', 'message');
-            $app->redirect(Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $extensionId, false));
-        }
-
-        // 3. Determine display limit (5, 10, 15, 30) from plugin params
         $displayLimit = (int) $this->form->getValue('analytics_display_limit', 'params', 10);
         if (!in_array($displayLimit, [5, 10, 15, 30], true)) {
             $displayLimit = 10;
         }
 
         // 4. Total general visits in the last 30 days
-        $query = $db->getQuery(true)
-            ->select('COUNT(*)')
-            ->from($db->quoteName('#__aimarkdown_logs'))
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
-        $db->setQuery($query);
-        $totalVisits = (int) $db->loadResult();
+        // Logs are stored in UTC (Factory::getDate()); the 30-day window is computed the same way
+        $since = $db->quote(Factory::getDate('-30 days')->toSql());
 
-        $clearUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $extensionId . '&action=clear_ai_logs&' . Session::getFormToken() . '=1');
+        $query = $db->getQuery(true)
+            ->select([
+                'COUNT(*) AS ' . $db->quoteName('total'),
+                'COALESCE(SUM(' . $db->quoteName('is_cache_hit') . '), 0) AS ' . $db->quoteName('hits'),
+                'COALESCE(SUM(CASE WHEN ' . $db->quoteName('url') . ' LIKE ' . $db->quote('%/llms.txt') . ' THEN 1 ELSE 0 END), 0) AS ' . $db->quoteName('llms'),
+            ])
+            ->from($db->quoteName('#__aimarkdown_logs'))
+            ->where($db->quoteName('created_at') . ' >= ' . $since);
+        $counters = $db->setQuery($query)->loadAssoc() ?: [];
+
+        $totalVisits     = (int) ($counters['total'] ?? 0);
+        $cacheHits       = (int) ($counters['hits'] ?? 0);
+        $totalLlmsVisits = (int) ($counters['llms'] ?? 0);
 
         if ($totalVisits === 0) {
             return '<div class="alert alert-info my-3">
@@ -70,20 +63,13 @@ class AnalyticsField extends FormField
         }
 
         // 5. Cache Hit Rate
-        $query = $db->getQuery(true)
-            ->select('COUNT(*)')
-            ->from($db->quoteName('#__aimarkdown_logs'))
-            ->where($db->quoteName('is_cache_hit') . ' = 1')
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
-        $db->setQuery($query);
-        $cacheHits = (int) $db->loadResult();
         $hitRate = $totalVisits > 0 ? round(($cacheHits / $totalVisits) * 100, 1) : 0;
 
         // 6. Breakdown by Bot (All requests)
         $query = $db->getQuery(true)
             ->select([$db->quoteName('bot_name'), 'COUNT(*) AS ' . $db->quoteName('count')])
             ->from($db->quoteName('#__aimarkdown_logs'))
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)')
+            ->where($db->quoteName('created_at') . ' >= ' . $since)
             ->group($db->quoteName('bot_name'))
             ->order($db->quoteName('count') . ' DESC');
         $db->setQuery($query);
@@ -95,7 +81,7 @@ class AnalyticsField extends FormField
         $query = $db->getQuery(true)
             ->select([$db->quoteName('url'), 'COUNT(*) AS ' . $db->quoteName('count')])
             ->from($db->quoteName('#__aimarkdown_logs'))
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)')
+            ->where($db->quoteName('created_at') . ' >= ' . $since)
             ->group($db->quoteName('url'))
             ->order($db->quoteName('count') . ' DESC')
             ->setLimit($displayLimit);
@@ -113,18 +99,10 @@ class AnalyticsField extends FormField
 
         // 9. DEDYKOWANA ANALITYKA DLA /llms.txt
         $query = $db->getQuery(true)
-            ->select('COUNT(*)')
-            ->from($db->quoteName('#__aimarkdown_logs'))
-            ->where($db->quoteName('url') . ' LIKE ' . $db->quote('%/llms.txt'))
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
-        $db->setQuery($query);
-        $totalLlmsVisits = (int) $db->loadResult();
-
-        $query = $db->getQuery(true)
             ->select([$db->quoteName('bot_name'), 'COUNT(*) AS ' . $db->quoteName('count')])
             ->from($db->quoteName('#__aimarkdown_logs'))
             ->where($db->quoteName('url') . ' LIKE ' . $db->quote('%/llms.txt'))
-            ->where($db->quoteName('created_at') . ' >= DATE_SUB(NOW(), INTERVAL 30 DAY)')
+            ->where($db->quoteName('created_at') . ' >= ' . $since)
             ->group($db->quoteName('bot_name'))
             ->order($db->quoteName('count') . ' DESC');
         $db->setQuery($query);
@@ -214,7 +192,7 @@ class AnalyticsField extends FormField
                                     <div class="mb-2">
                                         <div class="d-flex justify-content-between small mb-1">
                                             <span class="fw-semibold"><?php echo htmlspecialchars($stat['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                            <span><?php echo $stat['count']; ?> downloads (<?php echo $pct; ?>%)</span>
+                                            <span><?php echo (int) $stat['count']; ?> downloads (<?php echo $pct; ?>%)</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
                                             <div class="progress-bar bg-info" role="progressbar" style="width: <?php echo $pct; ?>%"></div>
@@ -238,7 +216,7 @@ class AnalyticsField extends FormField
                                         <tbody>
                                             <?php foreach ($recentLlmsLogs as $log): ?>
                                                 <tr>
-                                                    <td><?php echo htmlspecialchars($log['created_at'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td><?php echo HTMLHelper::_('date', $log['created_at'], 'Y-m-d H:i:s'); ?></td>
                                                     <td><strong><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></strong></td>
                                                     <td class="text-muted"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
                                                 </tr>
@@ -263,7 +241,7 @@ class AnalyticsField extends FormField
                             <div class="mb-2">
                                 <div class="d-flex justify-content-between small mb-1">
                                     <span class="fw-semibold"><?php echo htmlspecialchars($stat['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                    <span><?php echo $stat['count']; ?> visits (<?php echo $pct; ?>%)</span>
+                                    <span><?php echo (int) $stat['count']; ?> visits (<?php echo $pct; ?>%)</span>
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div class="progress-bar bg-primary" role="progressbar" style="width: <?php echo $pct; ?>%"></div>
@@ -279,10 +257,10 @@ class AnalyticsField extends FormField
                         <ul class="list-group list-group-flush">
                             <?php foreach ($topPages as $page): ?>
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                    <a href="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-truncate me-2 small text-decoration-none" style="max-width: 80%;" title="<?php echo htmlspecialchars($page['url']); ?>">
-                                        <?php echo htmlspecialchars($page['url']); ?>
+                                    <a href="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-truncate me-2 small text-decoration-none" style="max-width: 80%;" title="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>
                                     </a>
-                                    <span class="badge bg-secondary rounded-pill"><?php echo $page['count']; ?></span>
+                                    <span class="badge bg-secondary rounded-pill"><?php echo (int) $page['count']; ?></span>
                                 </li>
                             <?php endforeach; ?>
                         </ul>
@@ -307,11 +285,11 @@ class AnalyticsField extends FormField
                         <tbody class="small">
                             <?php foreach ($recentLogs as $log): ?>
                                 <tr>
-                                    <td><?php echo htmlspecialchars($log['created_at']); ?></td>
-                                    <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($log['bot_name']); ?></span></td>
+                                    <td><?php echo HTMLHelper::_('date', $log['created_at'], 'Y-m-d H:i:s'); ?></td>
+                                    <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span></td>
                                     <td class="text-truncate" style="max-width: 250px;">
-                                        <a href="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="<?php echo htmlspecialchars($log['url']); ?>">
-                                            <?php echo htmlspecialchars($log['url']); ?>
+                                        <a href="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>
                                         </a>
                                     </td>
                                     <td>
@@ -321,7 +299,7 @@ class AnalyticsField extends FormField
                                             <span class="badge bg-secondary-subtle text-secondary">MISS</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="text-muted"><?php echo htmlspecialchars($log['ip_address']); ?></td>
+                                    <td class="text-muted"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -339,7 +317,7 @@ class AnalyticsField extends FormField
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Clearing...';
 
-            const token = '<?php echo $token; ?>';
+            const token = <?php echo json_encode($token); ?>;
             const url = 'index.php?aimarkdown_action=clear_logs&' + token + '=1';
 
             fetch(url, {

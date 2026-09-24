@@ -2,14 +2,16 @@
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
+use Joomla\Database\DatabaseInterface;
 
 $app = Factory::getApplication();
-$db  = Factory::getDbo();
+$db  = Factory::getContainer()->get(DatabaseInterface::class);
 
 $query = $db->getQuery(true)
     ->select($db->quoteName('extension_id'))
     ->from($db->quoteName('#__extensions'))
     ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+    ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
     ->where($db->quoteName('element') . ' = ' . $db->quote('aimarkdown'));
 $db->setQuery($query);
 $pluginId = (int) $db->loadResult();

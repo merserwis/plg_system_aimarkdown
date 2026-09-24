@@ -2,7 +2,8 @@
 <extension type="component" client="administrator" method="upgrade">
     <name>com_aimarkdown</name>
     <author>Merserwis</author>
-    <version>1.4.0</version>
+    <creationDate>2026-09-24</creationDate>
+    <version>1.5.2</version>
     <description>AI Markdown for Gridbox</description>
     <administration>
         <menu img="class:robot">AI Markdown for Gridbox</menu>
