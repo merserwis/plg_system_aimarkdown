@@ -6,6 +6,7 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Form\FormField;
 use Joomla\CMS\HTML\HTMLHelper;
+use Joomla\CMS\Language\Text;
 use Joomla\CMS\Session\Session;
 use Joomla\Database\DatabaseInterface;
 
@@ -26,10 +27,15 @@ class AnalyticsField extends FormField
             return '';
         }
 
+        $t  = fn (string $key): string => htmlspecialchars(Text::_('PLG_SYSTEM_AIMARKDOWN_' . $key), ENT_QUOTES, 'UTF-8');
+        $tn = fn (string $key, int $n): string => htmlspecialchars(Text::plural('PLG_SYSTEM_AIMARKDOWN_' . $key, $n), ENT_QUOTES, 'UTF-8');
+        // texts for the script below, safe inside <script>
+        $js = fn (string $key): string => json_encode(Text::_('PLG_SYSTEM_AIMARKDOWN_' . $key), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+
         $tables    = $db->getTableList();
         $tableName = $db->replacePrefix('#__aimarkdown_logs');
         if (!in_array($tableName, $tables, true)) {
-            return '<div class="alert alert-info">Analytics table not yet created. Re-save or re-install plugin to initialize.</div>';
+            return '<div class="alert alert-info">' . $t('ANALYTICS_NO_TABLE') . '</div>';
         }
 
         $displayLimit = (int) $this->form->getValue('analytics_display_limit', 'params', 10);
@@ -57,8 +63,8 @@ class AnalyticsField extends FormField
 
         if ($totalVisits === 0) {
             return '<div class="alert alert-info my-3">
-                <h5 class="alert-heading">No AI visits recorded yet</h5>
-                <p class="mb-0">As soon as crawlers like SearchGPT, ClaudeBot, or Perplexity visit your site or query /llms.txt, detailed statistics will appear right here.</p>
+                <h5 class="alert-heading">' . $t('ANALYTICS_NO_VISITS_TITLE') . '</h5>
+                <p class="mb-0">' . $t('ANALYTICS_NO_VISITS_DESC') . '</p>
             </div>';
         }
 
@@ -75,7 +81,7 @@ class AnalyticsField extends FormField
         $db->setQuery($query);
         $botStats = $db->loadAssocList() ?: [];
 
-        $topBot = !empty($botStats) ? $botStats[0]['bot_name'] : 'None';
+        $topBot = !empty($botStats) ? $botStats[0]['bot_name'] : Text::_('PLG_SYSTEM_AIMARKDOWN_NONE');
 
         // 7. Top Pages Crawled
         $query = $db->getQuery(true)
@@ -125,14 +131,14 @@ class AnalyticsField extends FormField
             <!-- Header bar with AJAX Clear Statistics Button -->
             <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
                 <div>
-                    <h5 class="mb-0 fw-bold text-dark">AI Crawler Activity (Last 30 Days)</h5>
-                    <small class="text-muted">Displaying up to <?php echo $displayLimit; ?> items per section</small>
+                    <h5 class="mb-0 fw-bold text-dark"><?php echo $t('ANALYTICS_TITLE'); ?></h5>
+                    <small class="text-muted"><?php echo $tn('ANALYTICS_DISPLAY_LIMIT_N', $displayLimit); ?></small>
                 </div>
                 <button type="button"
                         id="btn-clear-ai-logs"
                         class="btn btn-sm btn-outline-danger"
                         onclick="clearAiMarkdownLogs(this);">
-                    <span class="icon-trash" aria-hidden="true"></span> Clear Statistics
+                    <span class="icon-trash" aria-hidden="true"></span> <?php echo $t('ANALYTICS_CLEAR'); ?>
                 </button>
             </div>
 
@@ -140,25 +146,25 @@ class AnalyticsField extends FormField
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
                     <div class="card bg-light border-0 shadow-sm text-center p-3">
-                        <div class="text-muted small text-uppercase">30-Day AI Visits</div>
+                        <div class="text-muted small text-uppercase"><?php echo $t('KPI_VISITS'); ?></div>
                         <div class="fs-2 fw-bold text-primary"><?php echo number_format($totalVisits); ?></div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="card bg-light border-0 shadow-sm text-center p-3">
-                        <div class="text-muted small text-uppercase">Cache Hit Rate</div>
+                        <div class="text-muted small text-uppercase"><?php echo $t('KPI_HIT_RATE'); ?></div>
                         <div class="fs-2 fw-bold text-success"><?php echo $hitRate; ?>%</div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="card bg-light border-0 shadow-sm text-center p-3">
-                        <div class="text-muted small text-uppercase">Unique AI Bots</div>
+                        <div class="text-muted small text-uppercase"><?php echo $t('KPI_UNIQUE_BOTS'); ?></div>
                         <div class="fs-2 fw-bold text-info"><?php echo count($botStats); ?></div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="card bg-light border-0 shadow-sm text-center p-3">
-                        <div class="text-muted small text-uppercase">Most Active Bot</div>
+                        <div class="text-muted small text-uppercase"><?php echo $t('KPI_TOP_BOT'); ?></div>
                         <div class="fs-5 fw-bold text-dark mt-2 text-truncate" title="<?php echo htmlspecialchars($topBot, ENT_QUOTES, 'UTF-8'); ?>">
                             <?php echo htmlspecialchars($topBot, ENT_QUOTES, 'UTF-8'); ?>
                         </div>
@@ -172,27 +178,27 @@ class AnalyticsField extends FormField
             <div class="card border border-primary-subtle shadow-sm mb-4">
                 <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center py-2">
                     <h6 class="mb-0 fw-bold text-primary">
-                        <span class="icon-file-text" aria-hidden="true"></span> AI Bot Activity on /llms.txt (Last 30 Days)
+                        <span class="icon-file-text" aria-hidden="true"></span> <?php echo $t('ANALYTICS_LLMS_TITLE'); ?>
                     </h6>
-                    <span class="badge bg-primary rounded-pill"><?php echo $totalLlmsVisits; ?> downloads</span>
+                    <span class="badge bg-primary rounded-pill"><?php echo $tn('DOWNLOADS_N', $totalLlmsVisits); ?></span>
                 </div>
                 <div class="card-body">
                     <?php if ($totalLlmsVisits === 0): ?>
                         <div class="text-muted small py-2">
-                            No requests to <code>/llms.txt</code> recorded in the last 30 days. As soon as AI models (e.g. ClaudeBot, GPTBot) fetch the site map, detailed statistics will appear here.
+                            <?php echo Text::_('PLG_SYSTEM_AIMARKDOWN_ANALYTICS_LLMS_NONE'); ?>
                         </div>
                     <?php else: ?>
                         <div class="row g-3">
                             <!-- Breakdown of bots fetching llms.txt -->
                             <div class="col-md-6 border-end">
-                                <h6 class="small text-muted text-uppercase mb-2">Bots Fetching /llms.txt:</h6>
+                                <h6 class="small text-muted text-uppercase mb-2"><?php echo $t('ANALYTICS_LLMS_BOTS'); ?></h6>
                                 <?php foreach ($llmsBotStats as $stat): 
                                     $pct = round(($stat['count'] / $totalLlmsVisits) * 100, 1);
                                 ?>
                                     <div class="mb-2">
                                         <div class="d-flex justify-content-between small mb-1">
                                             <span class="fw-semibold"><?php echo htmlspecialchars($stat['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                            <span><?php echo (int) $stat['count']; ?> downloads (<?php echo $pct; ?>%)</span>
+                                            <span><?php echo $tn('DOWNLOADS_N', (int) $stat['count']); ?> (<?php echo $pct; ?>%)</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
                                             <div class="progress-bar bg-info" role="progressbar" style="width: <?php echo $pct; ?>%"></div>
@@ -203,14 +209,14 @@ class AnalyticsField extends FormField
 
                             <!-- Latest llms.txt requests table -->
                             <div class="col-md-6">
-                                <h6 class="small text-muted text-uppercase mb-2">Latest /llms.txt Requests:</h6>
+                                <h6 class="small text-muted text-uppercase mb-2"><?php echo $t('ANALYTICS_LLMS_LATEST'); ?></h6>
                                 <div class="table-responsive">
                                     <table class="table table-sm table-hover align-middle mb-0" style="font-size: 11px;">
                                         <thead>
                                             <tr class="text-muted">
-                                                <th>Date &amp; Time</th>
-                                                <th>AI Bot</th>
-                                                <th>IP Address</th>
+                                                <th><?php echo $t('COL_DATE'); ?></th>
+                                                <th><?php echo $t('COL_BOT'); ?></th>
+                                                <th><?php echo $t('COL_IP'); ?></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -218,7 +224,7 @@ class AnalyticsField extends FormField
                                                 <tr>
                                                     <td><?php echo HTMLHelper::_('date', $log['created_at'], 'Y-m-d H:i:s'); ?></td>
                                                     <td><strong><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></strong></td>
-                                                    <td class="text-muted"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td class="text-muted" dir="ltr"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -234,14 +240,14 @@ class AnalyticsField extends FormField
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
                     <div class="card border p-3 h-100 shadow-sm">
-                        <h5 class="card-title mb-3">AI Bot Activity Breakdown (All Pages)</h5>
+                        <h5 class="card-title mb-3"><?php echo $t('ANALYTICS_BREAKDOWN'); ?></h5>
                         <?php foreach ($botStats as $stat): 
                             $pct = round(($stat['count'] / $totalVisits) * 100, 1);
                         ?>
                             <div class="mb-2">
                                 <div class="d-flex justify-content-between small mb-1">
                                     <span class="fw-semibold"><?php echo htmlspecialchars($stat['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                    <span><?php echo (int) $stat['count']; ?> visits (<?php echo $pct; ?>%)</span>
+                                    <span><?php echo $tn('VISITS_N', (int) $stat['count']); ?> (<?php echo $pct; ?>%)</span>
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div class="progress-bar bg-primary" role="progressbar" style="width: <?php echo $pct; ?>%"></div>
@@ -253,12 +259,12 @@ class AnalyticsField extends FormField
 
                 <div class="col-md-6">
                     <div class="card border p-3 h-100 shadow-sm">
-                        <h5 class="card-title mb-3">Top <?php echo $displayLimit; ?> Pages Crawled by AI</h5>
+                        <h5 class="card-title mb-3"><?php echo $tn('ANALYTICS_TOP_PAGES_N', $displayLimit); ?></h5>
                         <ul class="list-group list-group-flush">
                             <?php foreach ($topPages as $page): ?>
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
                                     <a href="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-truncate me-2 small text-decoration-none" style="max-width: 80%;" title="<?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>">
-                                        <?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?>
+                                        <bdi dir="ltr"><?php echo htmlspecialchars($page['url'], ENT_QUOTES, 'UTF-8'); ?></bdi>
                                     </a>
                                     <span class="badge bg-secondary rounded-pill"><?php echo (int) $page['count']; ?></span>
                                 </li>
@@ -270,16 +276,16 @@ class AnalyticsField extends FormField
 
             <!-- Recent Logs Table -->
             <div class="card border p-3 shadow-sm">
-                <h5 class="card-title mb-3">Latest <?php echo $displayLimit; ?> AI Requests</h5>
+                <h5 class="card-title mb-3"><?php echo $tn('ANALYTICS_LATEST_N', $displayLimit); ?></h5>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped table-hover align-middle mb-0">
                         <thead>
                             <tr class="small text-muted">
-                                <th>Date &amp; Time</th>
-                                <th>Bot Name</th>
-                                <th>URL</th>
-                                <th>Cache</th>
-                                <th>IP Address</th>
+                                <th><?php echo $t('COL_DATE'); ?></th>
+                                <th><?php echo $t('COL_BOT_NAME'); ?></th>
+                                <th><?php echo $t('COL_URL'); ?></th>
+                                <th><?php echo $t('COL_CACHE'); ?></th>
+                                <th><?php echo $t('COL_IP'); ?></th>
                             </tr>
                         </thead>
                         <tbody class="small">
@@ -289,7 +295,7 @@ class AnalyticsField extends FormField
                                     <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span></td>
                                     <td class="text-truncate" style="max-width: 250px;">
                                         <a href="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>">
-                                            <?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>
+                                            <bdi dir="ltr"><?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?></bdi>
                                         </a>
                                     </td>
                                     <td>
@@ -299,7 +305,7 @@ class AnalyticsField extends FormField
                                             <span class="badge bg-secondary-subtle text-secondary">MISS</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="text-muted"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td class="text-muted" dir="ltr"><?php echo htmlspecialchars($log['ip_address'], ENT_QUOTES, 'UTF-8'); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -310,18 +316,38 @@ class AnalyticsField extends FormField
 
         <script>
         function clearAiMarkdownLogs(btn) {
-            if (!confirm('Are you sure you want to permanently clear all AI visit logs?')) {
+            const T = {
+                confirm: <?php echo $js('ANALYTICS_CLEAR_CONFIRM'); ?>,
+                clearing: <?php echo $js('ANALYTICS_CLEARING'); ?>,
+                clear: <?php echo $js('ANALYTICS_CLEAR'); ?>,
+                clearedTitle: <?php echo $js('ANALYTICS_CLEARED_TITLE'); ?>,
+                clearedDesc: <?php echo $js('ANALYTICS_CLEARED_DESC'); ?>,
+                error: <?php echo $js('ANALYTICS_CLEAR_ERROR'); ?>,
+                unknown: <?php echo $js('ERROR_UNKNOWN'); ?>,
+                network: <?php echo $js('ANALYTICS_CLEAR_NETWORK_ERROR'); ?>
+            };
+            const restore = () => {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="icon-trash" aria-hidden="true"></span> ';
+                btn.appendChild(document.createTextNode(T.clear));
+            };
+            if (!confirm(T.confirm)) {
                 return;
             }
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Clearing...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ';
+            btn.appendChild(document.createTextNode(T.clearing));
 
             const token = <?php echo json_encode($token); ?>;
-            const url = 'index.php?aimarkdown_action=clear_logs&' + token + '=1';
+            // the token goes in the request body, not in the address (server logs)
+            const body = new FormData();
+            body.append(token, '1');
 
-            fetch(url, {
+            fetch('index.php?aimarkdown_action=clear_logs', {
                 method: 'POST',
+                body: body,
+                credentials: 'same-origin',
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
             .then(res => res.json())
@@ -329,23 +355,25 @@ class AnalyticsField extends FormField
                 if (data && data.success) {
                     const dashboard = document.querySelector('.ai-analytics-dashboard');
                     if (dashboard) {
-                        dashboard.innerHTML = `
-                            <div class="alert alert-success my-3">
-                                <h5 class="alert-heading mb-1">Statistics Cleared</h5>
-                                <p class="mb-0">All AI crawler logs have been deleted successfully.</p>
-                            </div>
-                        `;
+                        const box = document.createElement('div');
+                        box.className = 'alert alert-success my-3';
+                        const h = document.createElement('h5');
+                        h.className = 'alert-heading mb-1';
+                        h.textContent = T.clearedTitle;
+                        const p = document.createElement('p');
+                        p.className = 'mb-0';
+                        p.textContent = T.clearedDesc;
+                        box.append(h, p);
+                        dashboard.replaceChildren(box);
                     }
                 } else {
-                    alert('Error clearing statistics: ' + (data.message || 'Unknown error'));
-                    btn.disabled = false;
-                    btn.innerHTML = '<span class="icon-trash" aria-hidden="true"></span> Clear Statistics';
+                    alert(T.error + ((data && data.message) || T.unknown));
+                    restore();
                 }
             })
             .catch(err => {
-                alert('Network error while clearing statistics.');
-                btn.disabled = false;
-                btn.innerHTML = '<span class="icon-trash" aria-hidden="true"></span> Clear Statistics';
+                alert(T.network);
+                restore();
             });
         }
         </script>

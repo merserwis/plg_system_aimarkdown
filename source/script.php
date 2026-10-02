@@ -3,6 +3,7 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Cache\CacheControllerFactoryInterface;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Language\Text;
 use Joomla\CMS\Installer\InstallerScript;
 use Joomla\Database\DatabaseInterface;
 
@@ -37,6 +38,10 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
             $this->migrateGridboxUrlMode();
         }
 
+        if ($type === 'update' && $this->previousVersion !== '' && version_compare($this->previousVersion, '1.6.0', '<')) {
+            $this->migrateMenuType();
+        }
+
         // Ordering + enabling only on a fresh install: an update must not re-enable a plugin
         // the administrator switched off, nor move it after the admin changed the order.
         if ($type === 'install' || $type === 'discover_install') {
@@ -44,6 +49,23 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
         }
 
         $this->clearCaches();
+        $this->recordSiteBase();
+    }
+
+    /** The site address for /llms.txt generations started by visitors (see AiMarkdown::isTrustedHost). */
+    private function recordSiteBase(): void
+    {
+        try {
+            // only a browser request knows the site address (the CLI installer does not)
+            if (!Factory::getApplication()->isClient('administrator')) {
+                return;
+            }
+            $dir = JPATH_CACHE . '/plg_system_aimarkdown';
+            if (is_dir($dir) || @mkdir($dir, 0755, true) || is_dir($dir)) {
+                @file_put_contents($dir . '/llms.base', rtrim(\Joomla\CMS\Uri\Uri::root(), '/'));
+            }
+        } catch (\Throwable $e) {
+        }
     }
 
     public function uninstall($parent): bool
@@ -54,6 +76,10 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
         } catch (\Throwable $e) {
         }
 
+        // /llms.txt made by this plugin is served by the web server directly: it goes with the plugin
+        if (is_file(JPATH_CACHE . '/plg_system_aimarkdown/llms.attempt') && is_file(JPATH_ROOT . '/llms.txt')) {
+            @unlink(JPATH_ROOT . '/llms.txt');
+        }
         $this->deleteDirectoryRecursively(JPATH_CACHE . '/plg_system_aimarkdown');
 
         return true;
@@ -87,6 +113,41 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
      * 1.5.3 "router" (working links, but outside the app's menu item, so not the canonical URL).
      * From 1.5.4 "menu" (canonical, e.g. /oferta/...) is the default; switch installs on either.
      */
+    /**
+     * Up to 1.5.x the 'Main sections' menu defaulted to "main" — the administrator menu on almost
+     * every site, so the block stayed empty. Without a site menu of that name: all site menus.
+     */
+    private function migrateMenuType(): void
+    {
+        try {
+            $db    = $this->getDatabase();
+            $where = [
+                $db->quoteName('type') . ' = ' . $db->quote('plugin'),
+                $db->quoteName('folder') . ' = ' . $db->quote('system'),
+                $db->quoteName('element') . ' = ' . $db->quote('aimarkdown'),
+            ];
+            $query  = $db->getQuery(true)->select($db->quoteName('params'))->from($db->quoteName('#__extensions'))->where($where);
+            $params = json_decode((string) $db->setQuery($query)->loadResult(), true);
+            if (!is_array($params) || ($params['llms_menutype'] ?? 'main') !== 'main') {
+                return;
+            }
+            $query = $db->getQuery(true)
+                ->select('COUNT(*)')
+                ->from($db->quoteName('#__menu_types'))
+                ->where($db->quoteName('menutype') . ' = ' . $db->quote('main'))
+                ->where($db->quoteName('client_id') . ' = 0');
+            if ((int) $db->setQuery($query)->loadResult() > 0) {
+                return;
+            }
+            $params['llms_menutype'] = '';
+            $db->setQuery($db->getQuery(true)
+                ->update($db->quoteName('#__extensions'))
+                ->set($db->quoteName('params') . ' = ' . $db->quote(json_encode($params)))
+                ->where($where))->execute();
+        } catch (\Throwable $e) {
+        }
+    }
+
     private function migrateGridboxUrlMode(): void
     {
         try {
@@ -110,7 +171,7 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
                 ->where($where);
             $db->setQuery($query)->execute();
 
-            Factory::getApplication()->enqueueMessage('AI Markdown: Gridbox URL Mode przełączony na „Canonical (menu item + router)” — linki jak w sitemap, np. /oferta/…. Wygeneruj ponownie llms.txt.', 'notice');
+            Factory::getApplication()->enqueueMessage(Text::_('PLG_SYSTEM_AIMARKDOWN_INSTALL_URL_MODE_MIGRATED'), 'notice');
         } catch (\Throwable $e) {
         }
     }
@@ -146,7 +207,7 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
 
             $db->setQuery($sql)->execute();
         } catch (\Throwable $e) {
-            Factory::getApplication()->enqueueMessage('AI Markdown: nie można utworzyć tabeli logów: ' . $e->getMessage(), 'warning');
+            Factory::getApplication()->enqueueMessage(Text::sprintf('PLG_SYSTEM_AIMARKDOWN_INSTALL_LOG_TABLE_FAILED', $e->getMessage()), 'warning');
         }
     }
 
