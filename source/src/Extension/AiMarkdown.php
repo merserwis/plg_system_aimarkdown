@@ -2025,14 +2025,18 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
     }
 
     /**
-     * Public site menu items pointing at Gridbox: app id => URL of the item showing the whole app
-     * (view=blog&app=N without a category) and page id => URL of the item showing that page.
+     * Public site menu items pointing at Gridbox: app id => URL of the menu item showing that app
+     * (menu type "App" or "Category", i.e. view=blog&app=N[&id=category]) and page id => URL of the
+     * item showing that page. An item without a category wins over a category item of the same app;
+     * otherwise the first category item (menu order) is used — Gridbox builds the full category path
+     * under it, e.g. menu "oferta" (Category) -> /oferta/mierniki/.../product.
      *
      * @return array{apps: array<int, string>, pages: array<int, string>}
      */
     private function loadGridboxMenuMap(DatabaseInterface $db, array $publicLevels, string $rootUri): array
     {
-        $map = ['apps' => [], 'pages' => []];
+        $map         = ['apps' => [], 'pages' => []];
+        $appFromRoot = [];
 
         try {
             $query = $db->getQuery(true)
@@ -2054,17 +2058,24 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             parse_str((string) parse_url((string) $item['link'], PHP_URL_QUERY), $vars);
             $view = (string) ($vars['view'] ?? '');
 
-            if ($view === 'blog' && !empty($vars['app']) && empty($vars['id'])) {
-                $key = 'apps';
-                $id  = (int) $vars['app'];
+            if ($view === 'blog' && !empty($vars['app'])) {
+                $key    = 'apps';
+                $id     = (int) $vars['app'];
+                $isRoot = empty($vars['id']);
+
+                // Keep the first item, unless a later one shows the whole app and the kept one is a category.
+                if (isset($map[$key][$id]) && (!$isRoot || !empty($appFromRoot[$id]))) {
+                    continue;
+                }
+                $appFromRoot[$id] = $isRoot;
             } elseif ($view === 'page' && !empty($vars['id'])) {
                 $key = 'pages';
                 $id  = (int) $vars['id'];
-            } else {
-                continue;
-            }
 
-            if (isset($map[$key][$id])) {
+                if (isset($map[$key][$id])) {
+                    continue;
+                }
+            } else {
                 continue;
             }
 
