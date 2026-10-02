@@ -3,7 +3,7 @@
 [![Joomla Version](https://img.shields.io/badge/Joomla-5.x%20%7C%206.x-blue?style=for-the-badge&logo=joomla)](https://www.joomla.org)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%20--%208.5%2B-777BB4?style=for-the-badge&logo=php)](https://www.php.net)
 [![Standards](https://img.shields.io/badge/Standards-RFC%208288%20%7C%20llmstxt.org-orange?style=for-the-badge)](https://llmstxt.org)
-[![Version](https://img.shields.io/badge/Release-v1.5.2-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
+[![Version](https://img.shields.io/badge/Release-v1.6.0-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 A high-performance, native Joomla 5 and 6 extension suite designed to provide end-to-end **Generative Engine Optimization (GEO)**. It serves clean, machine-readable **Markdown** directly to AI search agents (**SearchGPT, OpenAI GPTBot, Anthropic Claude, Perplexity AI, Google Gemini, Apple Intelligence**) and automatically generates standardized **`/llms.txt`** domain maps.
@@ -24,6 +24,7 @@ Fully tailored for **Balbooa Gridbox** (Store, Blog, Case Studies & Pages), elim
 * **Embedded AI Analytics Dashboard:** Privacy-first, 100% local database logging in Joomla backend. Tracks 30-day AI visits, Cache Hit Rate, crawler distribution, top visited products, and a dedicated analytics card for `/llms.txt` downloads.
 * **Joomla Package Suite:** Bundles the System Plugin, Administrator Sidebar Shortcut (`com_aimarkdown`), and Home Dashboard Widget (`mod_aimarkdown_dashboard`) into a single atomic installer.
 * **Zero Remote Telemetry:** 100% self-hosted, independent, and GDPR/RODO compliant.
+* **8 administrator languages (new in 1.6.0):** English, Polish, Ukrainian, German, Spanish, French, Arabic and Chinese (Simplified) — plugin settings, the llms.txt panel, the analytics dashboard, the dashboard widget and all messages. The language follows the Joomla administrator language; for other languages the texts are in English. Right-to-left (Arabic) is supported. The generated Markdown and `/llms.txt` keep their own content language.
 
 ---
 
@@ -127,7 +128,7 @@ Miernik umożliwia pomiary stacji ładowania pojazdów elektrycznych AC przy uż
 
 ## 🚀 Installation & Suite Structure
 
-1. Download the latest `aimarkdown-package-1.5.0.zip` from the [Releases](https://github.com/merserwis/plg_system_aimarkdown/releases) section.
+1. Download the latest `aimarkdown-1.6.0.zip` from the [Releases](https://github.com/merserwis/plg_system_aimarkdown/releases) section.
 2. In your Joomla Administrator panel, navigate to:  
    **System → Install → Extensions**.
 3. Upload the package file. The native Joomla package will automatically deploy:
@@ -210,10 +211,13 @@ Link: <https://www.example.com/?output=markdown>; rel="alternate"; type="text/ma
 
 ## 🔒 Security & Performance Features
 
-* **Cloudflare Real IP Resolution:** Accurately logs bot IPs by evaluating `HTTP_CF_CONNECTING_IP` and `HTTP_X_FORWARDED_FOR` instead of reverse-proxy addresses.
+* **Real IP behind a proxy (opt-in):** with *Trust Proxy IP Headers* on, bot IPs come from `CF-Connecting-IP` or the entry of `X-Forwarded-For` added by your own proxy (the rightmost one); otherwise `REMOTE_ADDR`. IPs are anonymised.
+* **Host-header safe (1.6.0):** cached Markdown stores the site address as a placeholder and the cache key has no host, so a forged `Host` header neither gets its own entry nor reaches other visitors. A `/llms.txt` regeneration started by a visitor runs only on the site's own address (`$live_site`, or the address recorded when an administrator saves the settings or generates the file).
+* **Bounded resources (1.6.0):** only known query parameters (pagination, filters, Joomla and Gridbox routing; more in *Extra query parameters*) are part of the canonical URL and the cache key, so `utm_*` or random parameters cannot fill the cache. At most 20,000 cached files and 200,000 log rows.
+* **Fresh after changes (1.6.0):** saving or (un)publishing content, saving in Gridbox and saving the plugin settings clear the Markdown cache. Switching `/llms.txt` off (or uninstalling) removes the file.
 * **Dynamic Cache Invalidation:** The cache key embeds a hash signature of active plugin settings (`$configSignature`), ensuring instant regeneration upon saving options.
 * **Cache Poisoning Defense:** Emits `Vary: Accept` without replacing upstream compression headers (`Vary: Accept-Encoding`).
-* **CSRF & Permission Protection:** Log truncation and `/llms.txt` generation require native Joomla session tokens and `core.edit` privileges.
+* **CSRF & Permission Protection:** Log truncation and `/llms.txt` generation require `POST`, a Joomla session token (sent in the request body) and `core.edit` on plugins. Error details go to the Joomla log (category `plg_system_aimarkdown`), shown only with Debug System on. The dashboard widget needs `core.manage` on plugins.
 * **Sanitized DOM Parsing:** Converts characters safely using `mb_encode_numericentity` for complete PHP 8.5+ compatibility without deprecated functions.
 
 ---

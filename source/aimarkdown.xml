@@ -146,6 +146,16 @@
                 </field>
 
                 <field
+                    name="extra_query_params"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_EXTRA_QUERY_PARAMS_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_EXTRA_QUERY_PARAMS_DESC"
+                    default=""
+                    filter="string"
+                    hint="filter_brand, sort"
+                />
+
+                <field
                     name="custom_exclude_selectors"
                     type="textarea"
                     label="PLG_SYSTEM_AIMARKDOWN_CUSTOM_EXCLUDE_SELECTORS_LABEL"
