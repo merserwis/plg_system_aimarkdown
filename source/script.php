@@ -25,6 +25,37 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
         return parent::preflight($type, $parent);
     }
 
+    /**
+     * Since 1.6.1 the extension ships English, Polish, Ukrainian and German only: the files of the
+     * other languages installed by 1.6.0 are removed (Joomla keeps them on an update).
+     */
+    private function removeDroppedLanguages(): void
+    {
+        foreach (['ar-AA', 'es-ES', 'fr-FR', 'zh-CN'] as $tag) {
+            $bases = [
+                JPATH_ADMINISTRATOR . '/language/' . $tag . '/plg_system_aimarkdown',
+                JPATH_PLUGINS . '/system/aimarkdown/language/' . $tag . '/plg_system_aimarkdown',
+                JPATH_ADMINISTRATOR . '/language/' . $tag . '/mod_aimarkdown_dashboard',
+                JPATH_ADMINISTRATOR . '/modules/mod_aimarkdown_dashboard/language/' . $tag . '/mod_aimarkdown_dashboard',
+                JPATH_ADMINISTRATOR . '/language/' . $tag . '/com_aimarkdown',
+                JPATH_ADMINISTRATOR . '/components/com_aimarkdown/language/' . $tag . '/com_aimarkdown',
+            ];
+            foreach ($bases as $base) {
+                foreach (['.ini', '.sys.ini'] as $ext) {
+                    if (is_file($base . $ext)) {
+                        @unlink($base . $ext);
+                    }
+                }
+            }
+            foreach ([JPATH_PLUGINS . '/system/aimarkdown/language/' . $tag, JPATH_ADMINISTRATOR . '/modules/mod_aimarkdown_dashboard/language/' . $tag,
+                JPATH_ADMINISTRATOR . '/components/com_aimarkdown/language/' . $tag] as $dir) {
+                if (is_dir($dir) && !(new \FilesystemIterator($dir))->valid()) {
+                    @rmdir($dir);
+                }
+            }
+        }
+    }
+
     public function postflight(string $type, $parent): void
     {
         if ($type === 'uninstall') {
@@ -32,6 +63,7 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
         }
 
         $this->createAnalyticsTable();
+        $this->removeDroppedLanguages();
         $this->removeObsoleteFiles();
 
         if ($type === 'update' && $this->previousVersion !== '' && version_compare($this->previousVersion, '1.5.4', '<')) {

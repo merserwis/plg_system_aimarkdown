@@ -7,7 +7,7 @@
     <creationDate>2026-10-02</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.0</version>
+    <version>1.6.1</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -28,21 +28,14 @@
         <language tag="uk-UA">uk-UA/plg_system_aimarkdown.sys.ini</language>
         <language tag="de-DE">de-DE/plg_system_aimarkdown.ini</language>
         <language tag="de-DE">de-DE/plg_system_aimarkdown.sys.ini</language>
-        <language tag="es-ES">es-ES/plg_system_aimarkdown.ini</language>
-        <language tag="es-ES">es-ES/plg_system_aimarkdown.sys.ini</language>
-        <language tag="fr-FR">fr-FR/plg_system_aimarkdown.ini</language>
-        <language tag="fr-FR">fr-FR/plg_system_aimarkdown.sys.ini</language>
-        <language tag="ar-AA">ar-AA/plg_system_aimarkdown.ini</language>
-        <language tag="ar-AA">ar-AA/plg_system_aimarkdown.sys.ini</language>
-        <language tag="zh-CN">zh-CN/plg_system_aimarkdown.ini</language>
-        <language tag="zh-CN">zh-CN/plg_system_aimarkdown.sys.ini</language>
     </languages>
     
     <scriptfile>script.php</scriptfile>
 
     <config>
         <fields name="params">
-            <fieldset name="basic" label="PLG_SYSTEM_AIMARKDOWN_FIELDSET_BASIC">
+            <fieldset name="basic" label="PLG_SYSTEM_AIMARKDOWN_FIELDSET_BASIC" addfieldprefix="Merserwis\Plugin\System\AiMarkdown\Field">
+                <field name="help_tooltips" type="help" hiddenLabel="true" parentclass="d-none" />
                 <field
                     name="extension_info"
                     type="note"
