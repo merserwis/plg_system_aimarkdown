@@ -1,14 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <extension type="component" client="administrator" method="upgrade">
-    <name>com_aimarkdown</name>
+    <name>COM_AIMARKDOWN</name>
     <author>Merserwis</author>
-    <creationDate>2026-09-24</creationDate>
-    <version>1.5.4</version>
-    <description>AI Markdown for Gridbox</description>
+    <creationDate>2026-10-02</creationDate>
+    <version>1.6.0</version>
+    <description>COM_AIMARKDOWN_XML_DESCRIPTION</description>
     <administration>
-        <menu img="class:robot">AI Markdown for Gridbox</menu>
+        <menu img="class:robot">COM_AIMARKDOWN</menu>
         <files folder="admin">
             <filename>aimarkdown.php</filename>
+            <folder>language</folder>
         </files>
+        <languages folder="admin/language">
+            <language tag="en-GB">en-GB/com_aimarkdown.ini</language>
+            <language tag="en-GB">en-GB/com_aimarkdown.sys.ini</language>
+            <language tag="pl-PL">pl-PL/com_aimarkdown.ini</language>
+            <language tag="pl-PL">pl-PL/com_aimarkdown.sys.ini</language>
+            <language tag="uk-UA">uk-UA/com_aimarkdown.ini</language>
+            <language tag="uk-UA">uk-UA/com_aimarkdown.sys.ini</language>
+            <language tag="de-DE">de-DE/com_aimarkdown.ini</language>
+            <language tag="de-DE">de-DE/com_aimarkdown.sys.ini</language>
+            <language tag="es-ES">es-ES/com_aimarkdown.ini</language>
+            <language tag="es-ES">es-ES/com_aimarkdown.sys.ini</language>
+            <language tag="fr-FR">fr-FR/com_aimarkdown.ini</language>
+            <language tag="fr-FR">fr-FR/com_aimarkdown.sys.ini</language>
+            <language tag="ar-AA">ar-AA/com_aimarkdown.ini</language>
+            <language tag="ar-AA">ar-AA/com_aimarkdown.sys.ini</language>
+            <language tag="zh-CN">zh-CN/com_aimarkdown.ini</language>
+            <language tag="zh-CN">zh-CN/com_aimarkdown.sys.ini</language>
+        </languages>
     </administration>
 </extension>

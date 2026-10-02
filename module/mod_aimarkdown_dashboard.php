@@ -3,8 +3,15 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\HTML\HTMLHelper;
+use Joomla\CMS\Language\Text;
 use Joomla\CMS\Router\Route;
 use Joomla\Database\DatabaseInterface;
+
+// bot names and addresses are for administrators who manage extensions
+$user = Factory::getApplication()->getIdentity();
+if (!$user || !$user->authorise('core.manage', 'com_plugins')) {
+    return;
+}
 
 $db = Factory::getContainer()->get(DatabaseInterface::class);
 
@@ -38,7 +45,7 @@ $query = $db->getQuery(true)
     ->order($db->quoteName('created_at') . ' DESC')
     ->setLimit(1);
 $db->setQuery($query);
-$lastBot = $db->loadAssoc() ?: ['bot_name' => 'Brak', 'created_at' => '-'];
+$lastBot = $db->loadAssoc() ?: ['bot_name' => Text::_('MOD_AIMARKDOWN_DASHBOARD_NONE'), 'created_at' => '-'];
 
 // Pobierz ID wtyczki do linku
 $query = $db->getQuery(true)
@@ -50,16 +57,17 @@ $query = $db->getQuery(true)
 $db->setQuery($query);
 $pluginId = (int) $db->loadResult();
 $settingsUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $pluginId);
+$t = fn (string $key): string => htmlspecialchars(Text::_('MOD_AIMARKDOWN_DASHBOARD_' . $key), ENT_QUOTES, 'UTF-8');
 ?>
 
 <div class="card mb-3 shadow-sm border-0">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="card-title mb-0 fw-bold text-primary">
-                <span class="icon-robot" aria-hidden="true"></span> Ruch Botów AI (Markdown)
+                <span class="icon-robot" aria-hidden="true"></span> <?php echo $t('TITLE'); ?>
             </h5>
             <a href="<?php echo htmlspecialchars($settingsUrl, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-sm btn-outline-primary">
-                Ustawienia
+                <?php echo $t('SETTINGS'); ?>
             </a>
         </div>
 
@@ -67,27 +75,27 @@ $settingsUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension
             <div class="col-4">
                 <div class="p-2 bg-light rounded">
                     <div class="fs-4 fw-bold text-dark"><?php echo $visits24h; ?></div>
-                    <div class="small text-muted text-uppercase" style="font-size: 10px;">Dziś (24h)</div>
+                    <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('TODAY'); ?></div>
                 </div>
             </div>
             <div class="col-4">
                 <div class="p-2 bg-light rounded">
                     <div class="fs-4 fw-bold text-primary"><?php echo $visits30d; ?></div>
-                    <div class="small text-muted text-uppercase" style="font-size: 10px;">30 dni</div>
+                    <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('DAYS_30'); ?></div>
                 </div>
             </div>
             <div class="col-4">
                 <div class="p-2 bg-light rounded">
                     <div class="fs-4 fw-bold text-success"><?php echo $hitRate; ?>%</div>
-                    <div class="small text-muted text-uppercase" style="font-size: 10px;">Cache Hit</div>
+                    <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('CACHE_HIT'); ?></div>
                 </div>
             </div>
         </div>
 
         <div class="small text-muted d-flex justify-content-between border-top pt-2">
-            <span>Ostatnia wizyta:</span>
+            <span><?php echo $t('LAST_VISIT'); ?></span>
             <span class="fw-semibold text-truncate ms-2" style="max-width: 60%;" title="<?php echo htmlspecialchars($lastBot['bot_name'] . ($lastBot['created_at'] !== '-' ? ' — ' . HTMLHelper::_('date', $lastBot['created_at'], 'Y-m-d H:i') : ''), ENT_QUOTES, 'UTF-8'); ?>">
-                <?php echo htmlspecialchars($lastBot['bot_name'], ENT_QUOTES, 'UTF-8'); ?>
+                <bdi><?php echo htmlspecialchars($lastBot['bot_name'], ENT_QUOTES, 'UTF-8'); ?></bdi>
             </span>
         </div>
     </div>

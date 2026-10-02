@@ -6,6 +6,8 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Access\Access;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Filter\OutputFilter;
+use Joomla\CMS\Language\Text;
+use Joomla\CMS\Log\Log;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Router\Route;
 use Joomla\CMS\Session\Session;
@@ -31,6 +33,24 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
     /** Query parameters that only switch the output format and must not split the cache. */
     private const FORMAT_PARAMS = ['output', 'markdown'];
 
+    /**
+     * Query parameters that can change a page (Joomla core, Gridbox, pagination, search). Others
+     * (utm_*, fbclid, random values) are left out of the canonical URL and the cache key, so a
+     * visitor cannot fill the cache with endless variants of one page. More: setting "Extra query
+     * parameters".
+     */
+    private const QUERY_PARAMS = ['option', 'view', 'layout', 'id', 'catid', 'Itemid', 'app', 'category', 'tag', 'author',
+        'page', 'start', 'limitstart', 'limit', 'query', 'search', 'searchword', 'q', 'lang', 'format', 'filter_tag', 'year', 'month'];
+
+    /** At most this many Markdown files in the cache; the oldest go first. */
+    private const CACHE_MAX_FILES = 20000;
+
+    /** At most this many rows in the visit log; the oldest go first. */
+    private const LOG_MAX_ROWS = 200000;
+
+    /** Placeholder of scheme://host:port inside cached Markdown (restored on reading). */
+    private const HOST_PLACEHOLDER = "\0aimd-host\0";
+
     /** Set in onAfterInitialise, executed in onAfterRespond (after the visitor got the page). */
     private bool $llmsRegenerationDue = false;
 
@@ -43,6 +63,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             'onAfterInitialise' => 'onAfterInitialise',
             'onAfterRender'     => 'onAfterRender',
             'onAfterRespond'    => 'onAfterRespond',
+            // cached Markdown must not outlive an unpublished or restricted page, nor old settings
+            'onContentAfterSave'   => 'onContentChanged',
+            'onContentChangeState' => 'onContentChanged',
+            'onContentAfterDelete' => 'onContentChanged',
+            'onExtensionAfterSave' => 'onExtensionAfterSave',
         ];
     }
 
@@ -70,7 +95,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         // 3. Automatyczne generowanie /llms.txt: tylko zaznaczamy, praca odbywa się w onAfterRespond
         if ((bool) $this->params->get('enable_llmstxt', 0)) {
-            $this->llmsRegenerationDue = $this->isLlmsRegenerationDue();
+            $this->llmsRegenerationDue = $this->isLlmsRegenerationDue() && $this->isTrustedHost();
         }
 
         // 4. Standard HTML (and HEAD) requests are rendered by Joomla; headers are added in onAfterRender
@@ -168,10 +193,40 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $this->generateLlmsTxtFile();
     }
 
+    public function onContentChanged(): void
+    {
+        $this->purgeAllCache();
+    }
+
+    /** Settings saved: the site address is recorded, the cache cleared, a disabled /llms.txt removed. */
+    public function onExtensionAfterSave($event): void
+    {
+        $args    = method_exists($event, 'getArguments') ? $event->getArguments() : [];
+        $context = $args['context'] ?? $args[0] ?? '';
+        $table   = $args['subject'] ?? $args['item'] ?? $args[1] ?? null;
+        if ($context !== 'com_plugins.plugin' || !is_object($table) || ($table->element ?? '') !== 'aimarkdown') {
+            return;
+        }
+
+        $this->recordSiteBase();
+        $this->purgeAllCache();
+
+        $params = json_decode((string) ($table->params ?? ''), true);
+        if (is_array($params) && empty($params['enable_llmstxt']) && is_file($this->getLlmsFilePath())) {
+            // the web server serves the file directly: switched off means removed
+            @unlink($this->getLlmsFilePath());
+        }
+    }
+
     private function handleAdministratorRequest(): void
     {
         $app   = $this->getApplication();
         $input = $app->getInput();
+
+        // Gridbox saves its pages and products through its own requests (no content events)
+        if ($input->getCmd('option') === 'com_gridbox' && $input->getMethod() === 'POST') {
+            $this->purgeAllCache();
+        }
 
         // Przekierowanie z bocznego menu "Komponenty" do wtyczki
         if ($input->getCmd('option') === 'com_aimarkdown') {
@@ -191,11 +246,24 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             && $user->authorise('core.edit', 'com_plugins')
             && Session::checkToken('request');
 
+        $this->loadLanguage();
         if (!$allowed) {
-            $this->sendJson(['success' => false, 'message' => 'Unauthorized or invalid token'], 403);
+            $this->sendJson(['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_AJAX_UNAUTHORIZED')], 403);
         }
 
+        if ($action === 'generate_llmstxt') {
+            $this->recordSiteBase();
+        }
         $this->sendJson($action === 'generate_llmstxt' ? $this->generateLlmsTxtFile() : $this->clearLogs());
+    }
+
+    /** Errors go to the Joomla log (category plg_system_aimarkdown). */
+    private function logError(\Throwable $e): void
+    {
+        try {
+            Log::add(get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(), Log::ERROR, 'plg_system_aimarkdown');
+        } catch (\Throwable $ignored) {
+        }
     }
 
     private function sendJson(array $data, int $status = 200): void
@@ -221,7 +289,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             try {
                 $db->setQuery('DELETE FROM ' . $db->quoteName('#__aimarkdown_logs'))->execute();
             } catch (\Throwable $e) {
-                return ['success' => false, 'message' => 'Nie można wyczyścić tabeli logów.'];
+                return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_CLEAR_LOGS_FAILED')];
             }
         }
 
@@ -257,7 +325,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $this->logAiVisit(rtrim(Uri::root(), '/') . '/llms.txt', 1);
 
         $filePath = $this->getLlmsFilePath();
-        if (!is_file($filePath)) {
+        if (!is_file($filePath) && $this->isTrustedHost()) {
             $this->generateLlmsTxtFile();
         }
 
@@ -269,6 +337,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 header('Retry-After: 3600');
             }
             header('Content-Type: text/markdown; charset=utf-8');
+            header('X-Content-Type-Options: nosniff');
             header('X-Robots-Tag: all');
             header('Cache-Control: public, max-age=3600');
         }
@@ -304,7 +373,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $method = $app->getInput()->getMethod();
         $user   = $app->getIdentity();
 
-        return ($method === 'GET' || $method === 'HEAD') && (!$user || $user->guest);
+        // a visitor who picked another currency in the Gridbox switcher sees other prices
+        $currency = $app->getInput()->cookie->getString('gridbox-currency', '');
+
+        return ($method === 'GET' || $method === 'HEAD') && (!$user || $user->guest) && $currency === '';
     }
 
     private function getCanonicalPath(): string
@@ -335,6 +407,14 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             unset($query[$param]);
         }
 
+        $allowed = self::QUERY_PARAMS;
+        foreach (preg_split('/[\s,]+/', (string) $this->params->get('extra_query_params', '')) ?: [] as $extra) {
+            if ($extra !== '' && preg_match('/^[A-Za-z0-9_\-\[\]]{1,64}$/', $extra)) {
+                $allowed[] = $extra;
+            }
+        }
+        $query = array_intersect_key($query, array_flip($allowed));
+
         if (empty($query)) {
             return '';
         }
@@ -353,8 +433,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
     private function getCacheKey(string $canonicalUrl): string
     {
-        // The canonical URL already carries the normalised query string
-        return $canonicalUrl;
+        // The canonical URL already carries the normalised query string. The host is left out: every
+        // Host header would get an entry of its own (the host inside the Markdown is a placeholder).
+        $host = $this->currentHost();
+
+        return str_starts_with($canonicalUrl, $host) ? substr($canonicalUrl, strlen($host)) : $canonicalUrl;
     }
 
     private function getResponseStatus(): int
@@ -414,6 +497,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if (!headers_sent()) {
             http_response_code($status);
             header('Content-Type: text/markdown; charset=utf-8');
+            header('X-Content-Type-Options: nosniff');
             header('Vary: Accept');
             header('Link: <' . $canonicalUrl . '>; rel="canonical"; type="text/html"');
             header('Cache-Control: ' . ($public ? 'public, max-age=' . $cacheTtl : 'private, no-store'));
@@ -469,6 +553,18 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                     ->delete($db->quoteName('#__aimarkdown_logs'))
                     ->where($db->quoteName('created_at') . ' < ' . $db->quote(Factory::getDate('-' . $days . ' days')->toSql()));
                 $db->setQuery($pruneQuery)->execute();
+
+                // a hard cap on the rows too: forged user agents cannot grow the table without end
+                $query = $db->getQuery(true)
+                    ->select($db->quoteName('id'))
+                    ->from($db->quoteName('#__aimarkdown_logs'))
+                    ->order($db->quoteName('id') . ' DESC');
+                $edge = (int) $db->setQuery($query, self::LOG_MAX_ROWS, 1)->loadResult();
+                if ($edge > 0) {
+                    $db->setQuery($db->getQuery(true)
+                        ->delete($db->quoteName('#__aimarkdown_logs'))
+                        ->where($db->quoteName('id') . ' <= ' . $edge))->execute();
+                }
             }
         } catch (\Throwable $e) {
         }
@@ -486,7 +582,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if ((bool) $this->params->get('trust_proxy_headers', 0)) {
             $forwarded = $server->getString('HTTP_CF_CONNECTING_IP', '') ?: $server->getString('HTTP_X_FORWARDED_FOR', '');
             if ($forwarded !== '') {
-                $ip = trim(explode(',', $forwarded)[0]);
+                // the rightmost entry is the one the nearest (trusted) proxy added; the ones before it
+                // come from the client and can be anything
+                $parts = array_values(array_filter(array_map('trim', explode(',', $forwarded))));
+                $ip    = (string) end($parts);
             }
         }
 
@@ -595,7 +694,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         if (is_file($cacheFile) && (time() - (int) @filemtime($cacheFile)) < $cacheTtl) {
             $content = @file_get_contents($cacheFile);
-            return ($content !== false && $content !== '') ? $content : null;
+            return ($content !== false && $content !== '') ? str_replace(self::HOST_PLACEHOLDER, $this->currentHost(), $content) : null;
         }
 
         return null;
@@ -613,6 +712,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $cacheFile = $this->getCacheFilePath($cacheKey);
         $tmpFile   = $cacheFile . '.' . bin2hex(random_bytes(4)) . '.tmp';
 
+        // the address of the site is stored as a placeholder: a request with a forged Host header
+        // neither gets an entry of its own nor plants its host in the copy other visitors get
+        $content = str_replace($this->currentHost(), self::HOST_PLACEHOLDER, $content);
         if (@file_put_contents($tmpFile, $content) === false || !@rename($tmpFile, $cacheFile)) {
             @unlink($tmpFile);
         }
@@ -620,6 +722,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if (random_int(1, 200) === 1) {
             $this->purgeExpiredCache();
         }
+    }
+
+    /** scheme://host[:port] of the current request. */
+    private function currentHost(): string
+    {
+        return Uri::getInstance()->toString(['scheme', 'host', 'port']);
     }
 
     /**
@@ -631,8 +739,33 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $now      = time();
 
         // No GLOB_BRACE: the constant does not exist on musl-based systems (e.g. Alpine)
+        $kept = [];
         foreach (glob($this->getCacheDir() . '/*') ?: [] as $file) {
-            if (preg_match('/\.(md|tmp)$/', $file) && $now - (int) @filemtime($file) > $cacheTtl) {
+            if (!preg_match('/\.(md|tmp)$/', $file)) {
+                continue;
+            }
+            $mtime = (int) @filemtime($file);
+            if ($now - $mtime > $cacheTtl) {
+                @unlink($file);
+            } elseif (str_ends_with($file, '.md')) {
+                $kept[$file] = $mtime;
+            }
+        }
+
+        // a hard cap on the number of entries: the oldest go first
+        if (count($kept) > self::CACHE_MAX_FILES) {
+            asort($kept);
+            foreach (array_slice(array_keys($kept), 0, count($kept) - self::CACHE_MAX_FILES) as $file) {
+                @unlink($file);
+            }
+        }
+    }
+
+    /** Deletes every cached Markdown file (content or settings changed). */
+    private function purgeAllCache(): void
+    {
+        foreach (glob($this->getCacheDir() . '/*') ?: [] as $file) {
+            if (preg_match('/\.(md|tmp)$/', $file)) {
                 @unlink($file);
             }
         }
@@ -683,6 +816,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             } elseif ($meta['is_product'] && (bool) $this->params->get('auto_generate_faq', 1)) {
                 $faqMarkdown = $this->formatFaqToMarkdown($this->generateAutoFaq($meta));
             }
+        }
+
+        // Product photos of a Gridbox slideshow are CSS backgrounds: turned into images of the content
+        if ((bool) $this->params->get('show_images', 1)) {
+            $this->slideshowImagesToImg($xpath, $dom);
         }
 
         // 3. Unroll Balbooa Gridbox Tabs & Accordions
@@ -1262,6 +1400,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $meta['title']      = $this->jsonLdString($item['name'] ?? '');
             $meta['sku']        = $this->jsonLdString($item['sku'] ?? ($item['mpn'] ?? ''));
             $meta['brand']      = $this->jsonLdString($item['brand'] ?? '');
+            // some sites put a link into the brand name (e.g. index.php?option=...): not a brand
+            if (preg_match('#^(?:https?:|/|index\.php)|\?option=#i', $meta['brand'])) {
+                $meta['brand'] = '';
+            }
             $meta['category']   = $this->jsonLdString($item['category'] ?? '');
 
             $offers = $item['offers'] ?? null;
@@ -1614,8 +1756,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 if (!$this->params->get('show_images', 1)) {
                     return '';
                 }
-                $src = trim($node->getAttribute('src') ?: $node->getAttribute('data-src'));
-                if ($src === '' || str_starts_with($src, 'data:')) {
+                $src = $this->imageSource($node);
+                if ($src === '') {
                     return '';
                 }
                 $alt = str_replace(['[', ']'], ['\[', '\]'], trim($node->getAttribute('alt')));
@@ -1626,11 +1768,53 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
     }
 
     /**
+     * The real address of an image. Gridbox (and other lazy loaders) put a placeholder into src and
+     * the image into data-gridbox-lazyload-src / data-src; placeholders and inline data are skipped.
+     */
+    private function imageSource(\DOMElement $node): string
+    {
+        foreach (['data-gridbox-lazyload-src', 'data-src', 'data-lazy-src', 'src'] as $attribute) {
+            $src = trim($node->getAttribute($attribute));
+            if ($src !== '' && !str_starts_with($src, 'data:') && !str_contains($src, 'default-lazy-load.')) {
+                return $src;
+            }
+        }
+
+        return '';
+    }
+
+    /** Images of Gridbox slideshows (product galleries) are background images: each becomes an <img>. */
+    private function slideshowImagesToImg(\DOMXPath $xpath, \DOMDocument $dom): void
+    {
+        $nodes = $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " ba-slideshow-img ")]');
+        if (!$nodes instanceof \DOMNodeList) {
+            return;
+        }
+        $seen = [];
+        foreach (iterator_to_array($nodes) as $node) {
+            $style = $node->getAttribute('style') . ' ' . $node->getAttribute('data-gridbox-lazyload-style');
+            if (!preg_match('/background-image\s*:\s*url\(\s*[\'"]?([^\'")]+)/i', $style, $m)) {
+                continue;
+            }
+            $src = html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($src === '' || isset($seen[$src]) || str_starts_with($src, 'data:') || str_contains($src, 'default-lazy-load.')) {
+                continue;
+            }
+            $seen[$src] = true;
+            $img = $dom->createElement('img');
+            $img->setAttribute('src', $src);
+            $img->setAttribute('alt', trim($node->getAttribute('aria-label') ?: $node->getAttribute('title')));
+            $node->appendChild($img);
+        }
+    }
+
+    /**
      * Trim leading/trailing blanks of every line and collapse blank lines, leaving fenced code intact.
      */
     private function normalizeWhitespace(string $md): string
     {
-        $parts = preg_split('/(\n```\n.*?\n```\n)/s', $md, -1, PREG_SPLIT_DELIM_CAPTURE);
+        // a failure of the regular expression (very large page) leaves the text as it is
+        $parts = preg_split('/(\n```\n.*?\n```\n)/s', $md, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$md];
 
         foreach ($parts as $i => $part) {
             if ($i % 2 === 1) {
@@ -1640,7 +1824,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $parts[$i] = preg_replace('/ {2,}/', ' ', $part);
         }
 
-        return preg_replace('/\n{3,}/', "\n\n", implode('', $parts));
+        $md = implode('', $parts);
+
+        return preg_replace('/\n{3,}/', "\n\n", $md) ?? $md;
     }
 
     private function parseTable(\DOMNode $table): string
@@ -1681,6 +1867,43 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         return $output . "\n";
     }
 
+    /**
+     * The links of /llms.txt are built from the address of the request that generates it. A visitor's
+     * request may carry any Host header, so a generation started by a visitor runs only when the
+     * address is the site's own: $live_site of the Global Configuration, or the address recorded when
+     * an administrator saved the settings or generated the file.
+     */
+    private function isTrustedHost(): bool
+    {
+        if (trim((string) $this->getApplication()->get('live_site', '')) !== '') {
+            return true;
+        }
+        $base = @file_get_contents($this->getCacheDir() . '/llms.base');
+
+        return is_string($base) && $base !== '' && hash_equals(trim($base), rtrim(Uri::root(), '/'));
+    }
+
+    /** Now in the site's time zone (Gridbox stores and compares its publishing dates in it). */
+    private function siteNow(): string
+    {
+        try {
+            $zone = new \DateTimeZone((string) $this->getApplication()->get('offset', 'UTC') ?: 'UTC');
+        } catch (\Throwable $e) {
+            $zone = new \DateTimeZone('UTC');
+        }
+
+        return (new \DateTime('now', $zone))->format('Y-m-d H:i:s');
+    }
+
+    /** Remembers the site address (called in administrator requests only). */
+    private function recordSiteBase(): void
+    {
+        $dir = $this->getCacheDir();
+        if (is_dir($dir) || @mkdir($dir, 0755, true) || is_dir($dir)) {
+            @file_put_contents($dir . '/llms.base', rtrim(Uri::root(), '/'));
+        }
+    }
+
     private function getLlmsFilePath(): string
     {
         return JPATH_ROOT . '/llms.txt';
@@ -1719,15 +1942,25 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $lock = @fopen($cacheDir . '/llms.lock', 'c');
         if ($lock && !flock($lock, LOCK_EX | LOCK_NB)) {
             fclose($lock);
-            return ['success' => false, 'message' => 'Generowanie /llms.txt jest już w toku. Spróbuj ponownie za chwilę.'];
+            return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_LLMS_IN_PROGRESS')];
         }
 
         @touch($cacheDir . '/llms.attempt');
 
+        // large stores: thousands of routed links; the visitor's connection is not needed any more
+        @ignore_user_abort(true);
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(300);
+        }
+
         try {
             return $this->buildLlmsTxtFile();
         } catch (\Throwable $e) {
-            return ['success' => false, 'message' => 'Błąd generowania: ' . $e->getMessage()];
+            // details only in the Joomla log (or with debugging on): the message may name tables and paths
+            $this->logError($e);
+
+            return ['success' => false, 'message' => Text::sprintf('PLG_SYSTEM_AIMARKDOWN_LLMS_GENERATE_ERROR',
+                defined('JDEBUG') && JDEBUG ? $e->getMessage() : Text::_('PLG_SYSTEM_AIMARKDOWN_SEE_LOG'))];
         } finally {
             if ($lock) {
                 flock($lock, LOCK_UN);
@@ -1774,7 +2007,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         };
 
         // 1. Core Pages (public top-level site menu items, real routes instead of "/alias")
-        $menuType = trim((string) $this->params->get('llms_menutype', 'main'));
+        $menuType = trim((string) $this->params->get('llms_menutype', ''));
         $query    = $db->getQuery(true)
             ->select($db->quoteName(['id', 'title', 'path', 'home', 'language']))
             ->from($db->quoteName('#__menu'))
@@ -1881,6 +2114,20 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             } elseif (isset($pageColumns['access'])) {
                 $query->where($db->quoteName('p.access') . ' IN (' . implode(',', $publicLevels) . ')');
             }
+            // as Gridbox lists pages: not in the trash, already published and not ended yet; Gridbox
+            // compares these dates with the time of the site's time zone (DateHelper::make())
+            $gbNow  = $db->quote($this->siteNow());
+            $gbNull = $db->quote($db->getNullDate());
+            if (isset($pageColumns['page_category'])) {
+                $query->where($db->quoteName('p.page_category') . ' <> ' . $db->quote('trashed'));
+            }
+            if (isset($pageColumns['created'])) {
+                $query->where($db->quoteName('p.created') . ' <= ' . $gbNow);
+            }
+            if (isset($pageColumns['end_publishing'])) {
+                $query->where('(' . $db->quoteName('p.end_publishing') . ' = ' . $gbNull . ' OR ' . $db->quoteName('p.end_publishing') . ' IS NULL OR '
+                    . $db->quoteName('p.end_publishing') . ' >= ' . $gbNow . ')');
+            }
 
             // Sortowanie po wyświetleniach (lub dacie)
             if ($sortBy === 'hits' && $hitsColumn !== '') {
@@ -1963,14 +2210,14 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         if (@file_put_contents($tmpPath, $txt) === false || !@rename($tmpPath, $targetPath)) {
             @unlink($tmpPath);
-            return ['success' => false, 'message' => 'Nie można zapisać pliku na dysku. Sprawdź uprawnienia do zapisu w katalogu głównym witryny.'];
+            return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_LLMS_WRITE_ERROR')];
         }
 
         clearstatcache(true, $targetPath);
 
         return [
             'success'     => true,
-            'message'     => 'Plik /llms.txt został pomyślnie wygenerowany!',
+            'message'     => Text::_('PLG_SYSTEM_AIMARKDOWN_LLMS_GENERATED'),
             'date'        => Factory::getDate('now', $app->get('offset', 'UTC'))->format('Y-m-d H:i:s', true),
             'size'        => round(strlen($txt) / 1024, 2) . ' KB',
             'links_count' => $totalLinksCount,

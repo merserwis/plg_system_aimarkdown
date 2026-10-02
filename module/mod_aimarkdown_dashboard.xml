@@ -1,13 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <extension type="module" client="administrator" method="upgrade">
-    <name>mod_aimarkdown_dashboard</name>
+    <name>MOD_AIMARKDOWN_DASHBOARD</name>
     <author>Merserwis</author>
-    <creationDate>2026-09-24</creationDate>
+    <creationDate>2026-10-02</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.5.4</version>
-    <description>Dashboard widget for Joomla 6 displaying real-time AI crawler traffic and Markdown cache statistics.</description>
+    <version>1.6.0</version>
+    <description>MOD_AIMARKDOWN_DASHBOARD_XML_DESCRIPTION</description>
     <files>
         <filename module="mod_aimarkdown_dashboard">mod_aimarkdown_dashboard.php</filename>
+        <folder>language</folder>
     </files>
+    <languages folder="language">
+        <language tag="en-GB">en-GB/mod_aimarkdown_dashboard.ini</language>
+        <language tag="en-GB">en-GB/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.ini</language>
+        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="uk-UA">uk-UA/mod_aimarkdown_dashboard.ini</language>
+        <language tag="uk-UA">uk-UA/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="de-DE">de-DE/mod_aimarkdown_dashboard.ini</language>
+        <language tag="de-DE">de-DE/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="es-ES">es-ES/mod_aimarkdown_dashboard.ini</language>
+        <language tag="es-ES">es-ES/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="fr-FR">fr-FR/mod_aimarkdown_dashboard.ini</language>
+        <language tag="fr-FR">fr-FR/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="ar-AA">ar-AA/mod_aimarkdown_dashboard.ini</language>
+        <language tag="ar-AA">ar-AA/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="zh-CN">zh-CN/mod_aimarkdown_dashboard.ini</language>
+        <language tag="zh-CN">zh-CN/mod_aimarkdown_dashboard.sys.ini</language>
+    </languages>
 </extension>
