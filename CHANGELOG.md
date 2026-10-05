@@ -2,6 +2,21 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.2 — 2026-10-05
+
+### 💾 Settings file
+
+- A new tab **Settings file** with three buttons:
+  - **Export settings** downloads every setting of the form as `ai-markdown-settings-<date>.json` — **including the contents of the text fields** (excluded selectors, `/llms.txt` site title and summary, excluded URLs, merchant name, header and footer texts) and changes not saved yet.
+  - **Import settings…** reads such a file and saves the settings at once (after a confirmation), then reloads the page. Only settings the plugin knows are taken; settings missing in the file stay as they are. Files of other extensions are refused.
+  - **Restore defaults** brings every setting back to its default after a confirmation.
+- Import and reset do what a save of the form does: the Markdown cache is cleared, the site address recorded, a switched-off `/llms.txt` removed. The visit statistics and the `/llms.txt` file are not part of the settings file.
+- All three need an administrator who may edit plugins and the security token, like the other buttons of the plugin.
+
+---
+
+**Tested on:** Joomla 6.1.3 (Atum), PHP 8.5: update from 1.6.1; export with Polish texts, HTML and line breaks and an unsaved change; import of an edited file (values, texts, an unknown key ignored); a file of another extension refused; restore defaults (form shows the defaults after the reload); requests without an administrator session and token refused (403).
+
 ## 1.6.1 — 2026-10-02
 
 ### ❓ Help tooltips

@@ -3,7 +3,7 @@
 [![Joomla Version](https://img.shields.io/badge/Joomla-5.x%20%7C%206.x-blue?style=for-the-badge&logo=joomla)](https://www.joomla.org)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%20--%208.5%2B-777BB4?style=for-the-badge&logo=php)](https://www.php.net)
 [![Standards](https://img.shields.io/badge/Standards-RFC%208288%20%7C%20llmstxt.org-orange?style=for-the-badge)](https://llmstxt.org)
-[![Version](https://img.shields.io/badge/Release-v1.6.1-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
+[![Version](https://img.shields.io/badge/Release-v1.6.2-brightgreen?style=for-the-badge)](https://github.com/merserwis/plg_system_aimarkdown/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0.html)
 
 A high-performance, native Joomla 5 and 6 extension suite designed to provide end-to-end **Generative Engine Optimization (GEO)**. It serves clean, machine-readable **Markdown** directly to AI search agents (**SearchGPT, OpenAI GPTBot, Anthropic Claude, Perplexity AI, Google Gemini, Apple Intelligence**) and automatically generates standardized **`/llms.txt`** domain maps.
@@ -25,6 +25,7 @@ Fully tailored for **Balbooa Gridbox** (Store, Blog, Case Studies & Pages), elim
 * **Joomla Package Suite:** Bundles the System Plugin, Administrator Sidebar Shortcut (`com_aimarkdown`), and Home Dashboard Widget (`mod_aimarkdown_dashboard`) into a single atomic installer.
 * **Zero Remote Telemetry:** 100% self-hosted, independent, and GDPR/RODO compliant.
 * **4 administrator languages:** English (default), Polish, Ukrainian and German — plugin settings, the llms.txt panel, the analytics dashboard, the dashboard widget and all messages. The language follows the Joomla administrator language; for other languages the texts are in English. The generated Markdown and `/llms.txt` keep their own content language.
+* **Settings file (new in 1.6.2):** export every setting — with the contents of the text fields and changes not saved yet — to a JSON file, import it on this or another site, or restore all defaults with one click (tab *Settings file*).
 * **Help tooltips (new in 1.6.1):** a “?” beside every option shows its description on hover, keyboard focus or a click.
 
 ---
@@ -129,7 +130,7 @@ Miernik umożliwia pomiary stacji ładowania pojazdów elektrycznych AC przy uż
 
 ## 🚀 Installation & Suite Structure
 
-1. Download the latest `aimarkdown-1.6.1.zip` from the [Releases](https://github.com/merserwis/plg_system_aimarkdown/releases) section.
+1. Download the latest `aimarkdown-1.6.2.zip` from the [Releases](https://github.com/merserwis/plg_system_aimarkdown/releases) section.
 2. In your Joomla Administrator panel, navigate to:  
    **System → Install → Extensions**.
 3. Upload the package file. The native Joomla package will automatically deploy:
@@ -166,6 +167,9 @@ Access the settings via the new sidebar item: **Components → AI Markdown for G
 | **AI Analytics** | **Enable AI Analytics** | `Yes` | Local database logging of AI crawler traffic in `#__aimarkdown_logs`. |
 | **AI Analytics** | **Analytics Display Limit** | `10` | Limit for top crawled pages and recent requests tables (`5`, `10`, `15`, `30`). |
 | **AI Analytics** | **Log Retention** | `30 Days` | Automatic background pruning threshold for old crawler logs. |
+| **Settings file** | **Export settings** | — | Downloads `ai-markdown-settings-<date>.json` with every setting of the form, including the texts (selectors, site summary, merchant header and footer, excluded URLs) and unsaved changes. |
+| **Settings file** | **Import settings…** | — | Reads such a file and saves it at once; only known settings are taken (texts up to 100 000 characters), settings missing in the file stay. Then the page reloads. |
+| **Settings file** | **Restore defaults** | — | Every setting back to its default (after a confirmation); the cache is cleared and a switched-off `/llms.txt` removed, as after a save. Statistics are kept. |
 
 ---
 
