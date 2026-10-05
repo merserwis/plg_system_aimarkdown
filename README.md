@@ -223,6 +223,12 @@ Link: <https://www.example.com/?output=markdown>; rel="alternate"; type="text/ma
 
 ---
 
+## 📝 Changelog
+
+The full history of every version is in **[CHANGELOG.md](CHANGELOG.md)**.
+
+---
+
 ## 📋 Requirements
 
 * **Joomla:** 5.0 - 6.x (Full native Dependency Injection & Service Provider architecture)
