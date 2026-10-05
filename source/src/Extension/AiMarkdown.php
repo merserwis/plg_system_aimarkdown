@@ -235,7 +235,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         }
 
         $action = $input->getCmd('aimarkdown_action', '');
-        if ($action !== 'generate_llmstxt' && $action !== 'clear_logs') {
+        if (!in_array($action, ['generate_llmstxt', 'clear_logs', 'settings_export', 'settings_import', 'settings_reset'], true)) {
             return;
         }
 
@@ -254,7 +254,129 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if ($action === 'generate_llmstxt') {
             $this->recordSiteBase();
         }
-        $this->sendJson($action === 'generate_llmstxt' ? $this->generateLlmsTxtFile() : $this->clearLogs());
+        $this->sendJson(match ($action) {
+            'generate_llmstxt' => $this->generateLlmsTxtFile(),
+            'settings_export'  => $this->exportSettings((array) $input->post->get('jform', [], 'array')),
+            'settings_import'  => $this->importSettings((string) $input->post->get('data', '', 'raw')),
+            'settings_reset'   => $this->resetSettings(),
+            default            => $this->clearLogs(),
+        });
+    }
+
+    // ---------------------------------------------------------------- settings file
+
+    /**
+     * Names and types of the settings a settings file carries: every field of the plugin form,
+     * texts included (selectors, summaries, merchant texts), without notes and dashboards.
+     *
+     * @return array<string, string>
+     */
+    private function settingNames(): array
+    {
+        $xml   = @simplexml_load_file(JPATH_PLUGINS . '/system/aimarkdown/aimarkdown.xml');
+        $names = [];
+        foreach ($xml ? ($xml->xpath('//config/fields[@name="params"]/fieldset/field') ?: []) : [] as $field) {
+            $type = strtolower((string) $field['type']);
+            if (!in_array($type, ['note', 'spacer', 'help', 'llms', 'analytics', 'settingsfile'], true)) {
+                $names[(string) $field['name']] = $type;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The settings of the form (also unsaved ones) as a JSON file. Values come from the form the
+     * administrator sees, so what is exported is exactly what is on the screen.
+     */
+    private function exportSettings(array $form): array
+    {
+        $values = isset($form['params']) && is_array($form['params']) ? $form['params'] : json_decode($this->savedParamsJson(), true);
+        $params = array_intersect_key(is_array($values) ? $values : [], $this->settingNames());
+        ksort($params);
+
+        return ['success' => true, 'name' => 'ai-markdown-settings-' . gmdate('Y-m-d') . '.json', 'data' => [
+            'extension' => 'plg_system_aimarkdown', 'version' => $this->manifestVersion(), 'exported' => gmdate('c'),
+            'site' => rtrim(Uri::root(), '/'), 'params' => $params]];
+    }
+
+    /**
+     * Settings from a file: only known settings with plain values (texts up to 100 000 characters)
+     * are taken; the others stay as they are. Saved at once, like a save of the form.
+     */
+    private function importSettings(string $raw): array
+    {
+        $file = strlen($raw) <= 1048576 ? json_decode($raw, true) : null;
+        if (!is_array($file) || ($file['extension'] ?? '') !== 'plg_system_aimarkdown' || !is_array($file['params'] ?? null)) {
+            return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_SETTINGS_ERR_FILE')];
+        }
+        $names    = $this->settingNames();
+        $imported = [];
+        foreach ($file['params'] as $key => $value) {
+            if (!is_string($key) || !isset($names[$key])) {
+                continue;
+            }
+            if (is_bool($value)) {
+                $value = (int) $value;
+            }
+            if (is_int($value) || is_float($value) || is_string($value)) {
+                $imported[$key] = is_string($value) ? mb_substr($value, 0, 100000) : $value;
+            }
+        }
+        if (!$imported) {
+            return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_SETTINGS_ERR_EMPTY')];
+        }
+        $current = json_decode($this->savedParamsJson(), true);
+        $this->saveSettings(array_merge(is_array($current) ? $current : [], $imported));
+
+        return ['success' => true, 'count' => count($imported), 'message' => Text::sprintf('PLG_SYSTEM_AIMARKDOWN_SETTINGS_IMPORTED', count($imported))];
+    }
+
+    /** Every setting back to its default (empty parameters: each one falls back to the default of the form). */
+    private function resetSettings(): array
+    {
+        $this->saveSettings([]);
+
+        return ['success' => true, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_SETTINGS_RESET_DONE')];
+    }
+
+    private function savedParamsJson(): string
+    {
+        $db = $this->getDatabase();
+
+        return (string) $db->setQuery($db->getQuery(true)
+            ->select($db->quoteName('params'))
+            ->from($db->quoteName('#__extensions'))
+            ->where($db->quoteName('extension_id') . ' = ' . $this->getPluginExtensionId()))->loadResult();
+    }
+
+    /** Stores the parameters and does what a save of the form does (site address, cache, a switched-off /llms.txt). */
+    private function saveSettings(array $params): void
+    {
+        $db = $this->getDatabase();
+        $db->setQuery($db->getQuery(true)
+            ->update($db->quoteName('#__extensions'))
+            ->set($db->quoteName('params') . ' = ' . $db->quote(json_encode($params ?: new \stdClass(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)))
+            ->where($db->quoteName('extension_id') . ' = ' . $this->getPluginExtensionId()))->execute();
+
+        $this->recordSiteBase();
+        $this->purgeAllCache();
+        if (empty($params['enable_llmstxt']) && is_file($this->getLlmsFilePath())) {
+            @unlink($this->getLlmsFilePath());
+        }
+        // the plugin list (with its parameters) is cached by Joomla
+        try {
+            Factory::getContainer()->get(\Joomla\CMS\Cache\CacheControllerFactoryInterface::class)
+                ->createCacheController('callback', ['defaultgroup' => 'com_plugins'])->clean('com_plugins');
+        } catch (\Throwable $e) {
+        }
+    }
+
+    private function manifestVersion(): string
+    {
+        $xml = @simplexml_load_file(JPATH_PLUGINS . '/system/aimarkdown/aimarkdown.xml');
+
+        return $xml ? (string) $xml->version : '';
     }
 
     /** Errors go to the Joomla log (category plg_system_aimarkdown). */

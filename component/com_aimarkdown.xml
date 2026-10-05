@@ -2,8 +2,8 @@
 <extension type="component" client="administrator" method="upgrade">
     <name>COM_AIMARKDOWN</name>
     <author>Merserwis</author>
-    <creationDate>2026-10-02</creationDate>
-    <version>1.6.1</version>
+    <creationDate>2026-10-05</creationDate>
+    <version>1.6.2</version>
     <description>COM_AIMARKDOWN_XML_DESCRIPTION</description>
     <administration>
         <menu img="class:robot">COM_AIMARKDOWN</menu>

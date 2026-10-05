@@ -2,10 +2,10 @@
 <extension type="module" client="administrator" method="upgrade">
     <name>MOD_AIMARKDOWN_DASHBOARD</name>
     <author>Merserwis</author>
-    <creationDate>2026-10-02</creationDate>
+    <creationDate>2026-10-05</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.1</version>
+    <version>1.6.2</version>
     <description>MOD_AIMARKDOWN_DASHBOARD_XML_DESCRIPTION</description>
     <files>
         <filename module="mod_aimarkdown_dashboard">mod_aimarkdown_dashboard.php</filename>

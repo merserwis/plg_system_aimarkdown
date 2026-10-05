@@ -4,10 +4,10 @@
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
     <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
-    <creationDate>2026-10-02</creationDate>
+    <creationDate>2026-10-05</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.1</version>
+    <version>1.6.2</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -535,6 +535,14 @@
                     name="analytics_dashboard"
                     type="analytics"
                     showon="enable_analytics:1"
+                />
+            </fieldset>
+
+            <fieldset name="backup" label="PLG_SYSTEM_AIMARKDOWN_FIELDSET_BACKUP" addfieldprefix="Merserwis\Plugin\System\AiMarkdown\Field">
+                <field
+                    name="settings_file"
+                    type="settingsfile"
+                    hiddenLabel="true"
                 />
             </fieldset>
         </fields>
