@@ -14,11 +14,15 @@
     <languages folder="language">
         <language tag="en-GB">en-GB/mod_aimarkdown_dashboard.ini</language>
         <language tag="en-GB">en-GB/mod_aimarkdown_dashboard.sys.ini</language>
-        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.ini</language>
-        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.sys.ini</language>
-        <language tag="uk-UA">uk-UA/mod_aimarkdown_dashboard.ini</language>
-        <language tag="uk-UA">uk-UA/mod_aimarkdown_dashboard.sys.ini</language>
         <language tag="de-DE">de-DE/mod_aimarkdown_dashboard.ini</language>
         <language tag="de-DE">de-DE/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.ini</language>
+        <language tag="pl-PL">pl-PL/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="fr-FR">fr-FR/mod_aimarkdown_dashboard.ini</language>
+        <language tag="fr-FR">fr-FR/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="cs-CZ">cs-CZ/mod_aimarkdown_dashboard.ini</language>
+        <language tag="cs-CZ">cs-CZ/mod_aimarkdown_dashboard.sys.ini</language>
+        <language tag="nl-NL">nl-NL/mod_aimarkdown_dashboard.ini</language>
+        <language tag="nl-NL">nl-NL/mod_aimarkdown_dashboard.sys.ini</language>
     </languages>
 </extension>

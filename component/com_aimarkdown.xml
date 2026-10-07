@@ -14,12 +14,16 @@
         <languages folder="admin/language">
             <language tag="en-GB">en-GB/com_aimarkdown.ini</language>
             <language tag="en-GB">en-GB/com_aimarkdown.sys.ini</language>
-            <language tag="pl-PL">pl-PL/com_aimarkdown.ini</language>
-            <language tag="pl-PL">pl-PL/com_aimarkdown.sys.ini</language>
-            <language tag="uk-UA">uk-UA/com_aimarkdown.ini</language>
-            <language tag="uk-UA">uk-UA/com_aimarkdown.sys.ini</language>
             <language tag="de-DE">de-DE/com_aimarkdown.ini</language>
             <language tag="de-DE">de-DE/com_aimarkdown.sys.ini</language>
+            <language tag="pl-PL">pl-PL/com_aimarkdown.ini</language>
+            <language tag="pl-PL">pl-PL/com_aimarkdown.sys.ini</language>
+            <language tag="fr-FR">fr-FR/com_aimarkdown.ini</language>
+            <language tag="fr-FR">fr-FR/com_aimarkdown.sys.ini</language>
+            <language tag="cs-CZ">cs-CZ/com_aimarkdown.ini</language>
+            <language tag="cs-CZ">cs-CZ/com_aimarkdown.sys.ini</language>
+            <language tag="nl-NL">nl-NL/com_aimarkdown.ini</language>
+            <language tag="nl-NL">nl-NL/com_aimarkdown.sys.ini</language>
         </languages>
     </administration>
 </extension>

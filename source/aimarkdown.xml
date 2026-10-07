@@ -22,12 +22,16 @@
     <languages folder="language">
         <language tag="en-GB">en-GB/plg_system_aimarkdown.ini</language>
         <language tag="en-GB">en-GB/plg_system_aimarkdown.sys.ini</language>
-        <language tag="pl-PL">pl-PL/plg_system_aimarkdown.ini</language>
-        <language tag="pl-PL">pl-PL/plg_system_aimarkdown.sys.ini</language>
-        <language tag="uk-UA">uk-UA/plg_system_aimarkdown.ini</language>
-        <language tag="uk-UA">uk-UA/plg_system_aimarkdown.sys.ini</language>
         <language tag="de-DE">de-DE/plg_system_aimarkdown.ini</language>
         <language tag="de-DE">de-DE/plg_system_aimarkdown.sys.ini</language>
+        <language tag="pl-PL">pl-PL/plg_system_aimarkdown.ini</language>
+        <language tag="pl-PL">pl-PL/plg_system_aimarkdown.sys.ini</language>
+        <language tag="fr-FR">fr-FR/plg_system_aimarkdown.ini</language>
+        <language tag="fr-FR">fr-FR/plg_system_aimarkdown.sys.ini</language>
+        <language tag="cs-CZ">cs-CZ/plg_system_aimarkdown.ini</language>
+        <language tag="cs-CZ">cs-CZ/plg_system_aimarkdown.sys.ini</language>
+        <language tag="nl-NL">nl-NL/plg_system_aimarkdown.ini</language>
+        <language tag="nl-NL">nl-NL/plg_system_aimarkdown.sys.ini</language>
     </languages>
     
     <scriptfile>script.php</scriptfile>
