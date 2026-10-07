@@ -24,7 +24,7 @@ Fully tailored for **Balbooa Gridbox** (Store, Blog, Case Studies & Pages), elim
 * **Embedded AI Analytics Dashboard:** Privacy-first, 100% local database logging in Joomla backend. Tracks 30-day AI visits, Cache Hit Rate, crawler distribution, top visited products, and a dedicated analytics card for `/llms.txt` downloads.
 * **Joomla Package Suite:** Bundles the System Plugin, Administrator Sidebar Shortcut (`com_aimarkdown`), and Home Dashboard Widget (`mod_aimarkdown_dashboard`) into a single atomic installer.
 * **Zero Remote Telemetry:** 100% self-hosted, independent, and GDPR/RODO compliant.
-* **4 administrator languages:** English (default), Polish, Ukrainian and German — plugin settings, the llms.txt panel, the analytics dashboard, the dashboard widget and all messages. The language follows the Joomla administrator language; for other languages the texts are in English. The generated Markdown and `/llms.txt` keep their own content language.
+* **6 administrator languages:** English (default), German, Polish, French, Czech and Dutch — plugin settings, the llms.txt panel, the analytics dashboard, the dashboard widget and all messages. The language follows the Joomla administrator language; for other languages the texts are in English. The generated Markdown and `/llms.txt` keep their own content language.
 * **Settings file (new in 1.6.2):** export every setting — with the contents of the text fields and changes not saved yet — to a JSON file, import it on this or another site, or restore all defaults with one click (tab *Settings file*).
 * **Help tooltips (new in 1.6.1):** a “?” beside every option shows its description on hover, keyboard focus or a click.
 

@@ -26,12 +26,12 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
     }
 
     /**
-     * Since 1.6.1 the extension ships English, Polish, Ukrainian and German only: the files of the
-     * other languages installed by 1.6.0 are removed (Joomla keeps them on an update).
+     * Since 1.6.3 the extension ships English, German, Polish, French, Czech and Dutch: the files of
+     * the other languages installed by earlier versions are removed (Joomla keeps them on an update).
      */
     private function removeDroppedLanguages(): void
     {
-        foreach (['ar-AA', 'es-ES', 'fr-FR', 'zh-CN'] as $tag) {
+        foreach (['ar-AA', 'es-ES', 'uk-UA', 'zh-CN'] as $tag) {
             $bases = [
                 JPATH_ADMINISTRATOR . '/language/' . $tag . '/plg_system_aimarkdown',
                 JPATH_PLUGINS . '/system/aimarkdown/language/' . $tag . '/plg_system_aimarkdown',

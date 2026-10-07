@@ -2,6 +2,14 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.3 — 2026-10-07
+
+### 🌍 Languages
+
+- The administrator now ships **English (default), German, Polish, French, Czech and Dutch** — plugin settings, the `/llms.txt` panel, the AI Analytics dashboard, the dashboard widget, the menu entry and all messages. The language follows the Joomla administrator language; any other language shows English, also text by text where a translation lacks one.
+- **French, Czech and Dutch** translated in full; **German and Polish** reviewed against the English texts and corrected.
+- **Ukrainian removed**; its files left by earlier versions are removed on update, so those sites show English.
+
 ## 1.6.2 — 2026-10-05
 
 ### 💾 Settings file
