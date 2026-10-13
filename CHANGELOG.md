@@ -2,6 +2,12 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.4 — 2026-10-13
+
+### ✨ Changes
+
+- **Close goes to the Gridbox panel.** **Close**, **Save & Close** and **Save** then **Close** in the AI Markdown settings now go to the Gridbox panel instead of the list of plugins, as in MerTools (when Gridbox is installed; otherwise the list of plugins as before).
+
 ## 1.6.3 — 2026-10-07
 
 ### 🌍 Languages
