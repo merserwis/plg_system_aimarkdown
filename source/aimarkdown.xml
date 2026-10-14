@@ -4,10 +4,10 @@
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
     <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
-    <creationDate>2026-10-13</creationDate>
+    <creationDate>2026-10-14</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.4</version>
+    <version>1.6.5</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -81,12 +81,43 @@
                     label="PLG_SYSTEM_AIMARKDOWN_AUTO_GENERATE_FAQ_LABEL"
                     description="PLG_SYSTEM_AIMARKDOWN_AUTO_GENERATE_FAQ_DESC"
                     layout="joomla.form.field.radio.switcher"
-                    default="1"
+                    default="0"
                     filter="integer"
                     showon="enable_faq:1"
                 >
                     <option value="0">JNO</option>
                     <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="auto_faq_set"
+                    type="list"
+                    label="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_SET_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_SET_DESC"
+                    default="neutral"
+                    showon="enable_faq:1[AND]auto_generate_faq:1"
+                >
+                    <option value="neutral">PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_SET_OPT_NEUTRAL</option>
+                    <option value="custom">PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_SET_OPT_CUSTOM</option>
+                    <option value="instruments">PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_SET_OPT_INSTRUMENTS</option>
+                </field>
+
+                <field
+                    name="auto_faq_items"
+                    type="subform"
+                    label="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_ITEMS_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_ITEMS_DESC"
+                    multiple="true"
+                    min="0"
+                    max="20"
+                    layout="joomla.form.field.subform.repeatable-table"
+                    buttons="add,remove,move"
+                    showon="enable_faq:1[AND]auto_generate_faq:1[AND]auto_faq_set:custom"
+                >
+                    <form>
+                        <field name="question" type="text" label="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_QUESTION_LABEL" hint="PLG_SYSTEM_AIMARKDOWN_BOT_FAQ_SELLER_Q" filter="string" />
+                        <field name="answer" type="textarea" rows="2" label="PLG_SYSTEM_AIMARKDOWN_AUTO_FAQ_ANSWER_LABEL" hint="PLG_SYSTEM_AIMARKDOWN_BOT_FAQ_SELLER_A" filter="string" />
+                    </form>
                 </field>
 
                 <field
@@ -442,6 +473,18 @@
                 />
 
                 <field
+                    name="price_mode"
+                    type="list"
+                    label="PLG_SYSTEM_AIMARKDOWN_PRICE_MODE_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_PRICE_MODE_DESC"
+                    default="net"
+                >
+                    <option value="net">PLG_SYSTEM_AIMARKDOWN_PRICE_MODE_OPT_NET</option>
+                    <option value="gross">PLG_SYSTEM_AIMARKDOWN_PRICE_MODE_OPT_GROSS</option>
+                    <option value="final">PLG_SYSTEM_AIMARKDOWN_PRICE_MODE_OPT_FINAL</option>
+                </field>
+
+                <field
                     name="vat_rate"
                     type="number"
                     label="PLG_SYSTEM_AIMARKDOWN_VAT_RATE_LABEL"
@@ -451,7 +494,7 @@
                     max="100"
                     step="0.1"
                     filter="float"
-                    showon="enable_merchant_context:1"
+                    showon="price_mode!:final"
                 />
 
                 <field
@@ -476,6 +519,125 @@
                     cols="50"
                     filter="raw"
                     showon="enable_merchant_context:1"
+                />
+            </fieldset>
+
+            <fieldset name="texts" label="PLG_SYSTEM_AIMARKDOWN_FIELDSET_TEXTS">
+                <field
+                    name="texts_note"
+                    type="note"
+                    description="PLG_SYSTEM_AIMARKDOWN_TEXTS_NOTE"
+                    class="alert alert-info"
+                />
+
+                <field
+                    name="llms_title_sections"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_TITLE_SECTIONS_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_SECTIONS"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_title_categories"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_TITLE_CATEGORIES_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_CATEGORIES"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_title_popular"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_TITLE_POPULAR_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_POPULAR"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_title_latest"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_TITLE_LATEST_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_LATEST"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_title_articles"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_TITLE_ARTICLES_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_ARTICLES"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_desc_page"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_DESC_PAGE_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_DESC_PAGE"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_desc_category"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_DESC_CATEGORY_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_DESC_CATEGORY"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_desc_item"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_DESC_ITEM_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_DESC_ITEM"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="llms_desc_article"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_LLMS_DESC_ARTICLE_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_LLMS_DESC_ARTICLE"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="md_title_faq"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_MD_TITLE_FAQ_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_MD_FAQ"
+                    default=""
+                    filter="string"
+                    maxlength="250"
+                />
+
+                <field
+                    name="md_title_downloads"
+                    type="text"
+                    label="PLG_SYSTEM_AIMARKDOWN_TEXT_MD_TITLE_DOWNLOADS_LABEL"
+                    hint="PLG_SYSTEM_AIMARKDOWN_BOT_MD_DOWNLOADS"
+                    default=""
+                    filter="string"
+                    maxlength="250"
                 />
             </fieldset>
 

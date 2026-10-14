@@ -2,6 +2,24 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.5 — 2026-10-14
+
+Changes after feedback from a Portuguese site (thank you!).
+
+### 🐞 Fixes
+
+- **Accents, Polish letters and curly quotes in titles.** The title in the YAML header, the `{title}` tag and the generated FAQ showed HTML entities (`Espet&#225;culo &#8220;Mil Vezes Revista&#8221;`, also `tr&#243;jfazowej` on Polish pages): the page is read with every non-ASCII character as an entity, and the JSON-LD data was not turned back. Now it is, and remaining entities in titles, brands and categories (also in `/llms.txt`) are decoded.
+
+### ✨ Changes
+
+- **Texts for AI in the language of the site.** The headings and fallback descriptions of `/llms.txt` (“Main sections”, “Categories”, …, “… – a page of …”) and the FAQ and downloads headings and price labels of the Markdown were fixed Polish texts. They now come from the language files: the site's default language for `/llms.txt`, the page's language for the Markdown, English where the plugin has no translation (English, German, Polish, French, Czech and Dutch are included). Each can be replaced by your own wording on the new tab **Texts for AI**. Prices use the number format of that language (`1,234.56` in English, `1 234,56` in Polish).
+- **Auto-generated FAQs off by default** for new installations, and the questions are no longer about measuring instruments: the new setting **Questions and answers** offers *Neutral* (only from the product's own data — seller, price, availability, product code, brand — in the page language; a question is left out when the product has no such data), *Own* (your rows with placeholders) and *Measuring instruments* (the Polish set of the earlier versions).
+- **Price of the products:** *Net – VAT added* (as before), *Gross – VAT included* (the net price is worked out) or **Final price – without VAT**: the price as it is, without net, gross or VAT labels (e.g. travel agencies under the margin scheme). The VAT rate is hidden with the final price.
+
+### ⬆️ Update
+
+- Nothing changes for a site after the update: the generated FAQ stays on where it was on. A site whose default language is Polish keeps the former FAQ set (*Measuring instruments*) and the former wording of the industry-specific `/llms.txt` texts in the fields of *Texts for AI* (a message says so; clear the fields for the neutral texts). Other sites get the neutral FAQ and texts in their language. The heading of the PDF downloads follows the page language too (in Polish: “Do pobrania i dokumentacja”).
+
 ## 1.6.4 — 2026-10-13
 
 ### ✨ Changes

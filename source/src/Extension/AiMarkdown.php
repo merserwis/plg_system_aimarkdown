@@ -4,8 +4,11 @@ namespace Merserwis\Plugin\System\AiMarkdown\Extension;
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Access\Access;
+use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Filter\OutputFilter;
+use Joomla\CMS\Language\Language;
+use Joomla\CMS\Language\LanguageFactoryInterface;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
 use Joomla\CMS\Plugin\CMSPlugin;
@@ -56,6 +59,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
     /** Parsed JSON-LD objects of the page being converted (parsed once, used by FAQ + metadata). */
     private array $jsonLdItems = [];
+
+    /** Language of the texts written for AI models now ('' = the default language of the site). */
+    private string $contentTag = '';
+
+    /** Languages of those texts, by tag. */
+    private array $botLanguages = [];
 
     public static function getSubscribedEvents(): array
     {
@@ -908,6 +917,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $html = mb_convert_encoding($html, 'UTF-8', mb_detect_encoding($html) ?: 'UTF-8');
         }
 
+        // the texts added for AI models (FAQ, headings, price labels) in the language of the page
+        $this->contentTag = $this->getApplication()->getLanguage()->getTag();
+
         $htmlEncoded = mb_encode_numericentity($html, [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8');
 
         $dom            = new \DOMDocument();
@@ -935,7 +947,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             if (!empty($extractedFaq)) {
                 $customFaqFound = true;
                 $faqMarkdown    = $this->formatFaqToMarkdown($extractedFaq);
-            } elseif ($meta['is_product'] && (bool) $this->params->get('auto_generate_faq', 1)) {
+            } elseif ($meta['is_product'] && (bool) $this->params->get('auto_generate_faq', 0)) {
                 $faqMarkdown = $this->formatFaqToMarkdown($this->generateAutoFaq($meta));
             }
         }
@@ -1071,7 +1083,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         // 10. Append prioritized PDF downloads
         if (!empty($pdfDownloads)) {
-            $pdfSection = "\n\n## Downloads & Documentation\n";
+            $pdfSection = "\n\n## " . $this->botText('MD_DOWNLOADS', [], 'md_title_downloads') . "\n";
             foreach ($pdfDownloads as $pdfUrl => $pdfTitle) {
                 $pdfSection .= '* [' . $this->escapeLinkText($pdfTitle) . '](' . $this->escapeLinkUrl($pdfUrl) . ")\n";
             }
@@ -1107,7 +1119,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $scripts = $xpath->query('//script[@type="application/ld+json"]');
 
         foreach ($scripts ?: [] as $scriptNode) {
-            $rawJson = trim($scriptNode->nodeValue ?? '');
+            // the page was loaded with every non-ASCII character as a numeric entity (convertToMarkdown):
+            // the DOM decodes them in text, but not in <script> - turned back here, before the JSON
+            $rawJson = trim(mb_decode_numericentity($scriptNode->nodeValue ?? '', [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8'));
             if ($rawJson === '') {
                 continue;
             }
@@ -1153,7 +1167,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
      */
     private function jsonLdString($value): string
     {
-        if (is_string($value) || is_int($value) || is_float($value)) {
+        if (is_string($value)) {
+            return $this->decodeEntities($value);
+        }
+        if (is_int($value) || is_float($value)) {
             return trim((string) $value);
         }
 
@@ -1225,6 +1242,67 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         return $faqs;
     }
 
+    /**
+     * Text with HTML entities as plain text: "Espet&aacute;culo &#8220;Mil Vezes&#8221;" (as some
+     * editors and the JSON-LD of sites store it) becomes "Espetáculo “Mil Vezes”"; twice for "&amp;#8220;".
+     */
+    private function decodeEntities(string $text): string
+    {
+        for ($i = 0; $i < 2 && str_contains($text, '&'); $i++) {
+            $decoded = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($decoded === $text) {
+                break;
+            }
+            $text = $decoded;
+        }
+
+        return trim($text);
+    }
+
+    /**
+     * A text written for AI models (llms.txt, Markdown): the plugin setting $setting when filled in,
+     * otherwise the plugin language file of the content's language - the page's language for the
+     * Markdown, the site's default language for /llms.txt - with English where the plugin has no
+     * translation. Never the language of the administrator. {name} placeholders are replaced by $vars.
+     */
+    private function botText(string $key, array $vars = [], string $setting = ''): string
+    {
+        $text = $setting !== '' ? trim((string) $this->params->get($setting, '')) : '';
+        if ($text === '') {
+            $text = $this->botLanguage()->_('PLG_SYSTEM_AIMARKDOWN_BOT_' . $key);
+        }
+
+        return trim(strtr($text, $vars));
+    }
+
+    private function botLanguage(): Language
+    {
+        $tag = $this->contentTag !== '' ? $this->contentTag : (string) ComponentHelper::getParams('com_languages')->get('site', 'en-GB');
+        $tag = preg_match('/^[a-z]{2,3}-[A-Z]{2}$/', $tag) ? $tag : 'en-GB';
+        if (!isset($this->botLanguages[$tag])) {
+            $lang = Factory::getContainer()->get(LanguageFactoryInterface::class)->createLanguage($tag, false);
+            // the site's number format of that language, then the plugin texts (en-GB under missing keys)
+            $lang->load('joomla', JPATH_SITE, $tag, true, true);
+            $lang->load('plg_system_aimarkdown', JPATH_PLUGINS . '/system/aimarkdown', $tag, true, true);
+            $this->botLanguages[$tag] = $lang;
+        }
+
+        return $this->botLanguages[$tag];
+    }
+
+    /** A price in the number format of the content's language ("1 234,56" in Polish, "1,234.56" in English). */
+    private function botNumber(float $value): string
+    {
+        $lang      = $this->botLanguage();
+        $separator = function (string $key, string $default) use ($lang): string {
+            $value = $lang->_($key);
+            // Polish has &nbsp;: written as a plain space, as before
+            return $value === $key ? $default : str_replace("\u{00A0}", ' ', html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        };
+
+        return number_format($value, 2, $separator('DECIMALS_SEPARATOR', ','), $separator('THOUSANDS_SEPARATOR', ' '));
+    }
+
     private function htmlToPlainText(string $text): string
     {
         $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -1232,7 +1310,74 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         return trim(preg_replace('/\s+/u', ' ', $text));
     }
 
+    /**
+     * Questions and answers for a product page without its own FAQ. The neutral set (default) and the
+     * own set (setting "Questions and answers") are built only from what the page itself says: a
+     * question whose {placeholder} is empty for the product (no brand, no price…) is left out, so the
+     * AI model never gets an answer the page does not support. The set "measuring instruments" is the
+     * fixed Polish text of the versions up to 1.6.4 (warranty in Poland, calibration certificate,
+     * shipping in 24–48 h), only for shops of that kind.
+     */
     private function generateAutoFaq(array $meta): array
+    {
+        $set = (string) $this->params->get('auto_faq_set', 'neutral');
+        if ($set === 'instruments') {
+            return $this->instrumentsFaq($meta);
+        }
+
+        $vars = [
+            '{title}'        => (string) ($meta['title'] ?? ''),
+            '{sku}'          => (string) ($meta['sku'] ?? ''),
+            '{brand}'        => (string) ($meta['brand'] ?? ''),
+            '{category}'     => (string) ($meta['category'] ?? ''),
+            '{availability}' => $this->availabilityText((string) ($meta['availability'] ?? '')),
+            '{price}'        => (string) ($meta['price'] ?? ''),
+            '{seller}'       => trim((string) $this->params->get('merchant_name', '')),
+            '{url}'          => (string) ($meta['url'] ?? ''),
+        ];
+
+        $rows = [];
+        if ($set === 'custom') {
+            foreach ((array) $this->params->get('auto_faq_items', []) as $row) {
+                $row    = (array) $row;
+                $rows[] = [trim((string) ($row['question'] ?? '')), trim((string) ($row['answer'] ?? ''))];
+            }
+        } else {
+            foreach (['SELLER', 'PRICE', 'AVAILABILITY', 'SKU', 'BRAND'] as $key) {
+                $rows[] = [$this->botText('FAQ_' . $key . '_Q'), $this->botText('FAQ_' . $key . '_A')];
+            }
+        }
+
+        $faqs = [];
+        foreach ($rows as [$question, $answer]) {
+            if ($question === '' || $answer === '') {
+                continue;
+            }
+            preg_match_all('/\{[a-z_]+\}/', $question . ' ' . $answer, $used);
+            foreach (array_unique($used[0]) as $tag) {
+                if (isset($vars[$tag]) && trim($vars[$tag]) === '') {
+                    continue 2;
+                }
+            }
+            $faqs[] = ['q' => strtr($question, $vars), 'a' => strtr($answer, $vars)];
+        }
+
+        return $faqs;
+    }
+
+    /** schema.org availability ("InStock") in words of the content's language; a shop's own text stays. */
+    private function availabilityText(string $availability): string
+    {
+        $key = strtoupper(preg_replace('/[^A-Za-z]/', '', $availability));
+        if (in_array($key, ['INSTOCK', 'OUTOFSTOCK', 'PREORDER', 'BACKORDER', 'LIMITEDAVAILABILITY', 'SOLDOUT', 'DISCONTINUED', 'ONLINEONLY', 'INSTOREONLY'], true)) {
+            return $this->botText('AVAILABILITY_' . $key);
+        }
+
+        return $availability;
+    }
+
+    /** The FAQ set "measuring instruments" (Polish, as generated for every product up to 1.6.4). */
+    private function instrumentsFaq(array $meta): array
     {
         $faqs         = [];
         $title        = !empty($meta['title']) ? $meta['title'] : 'Produkt';
@@ -1274,7 +1419,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             return '';
         }
 
-        $md = "\n\n## Najczęściej zadawane pytania (FAQ)\n";
+        $md = "\n\n## " . $this->botText('MD_FAQ', [], 'md_title_faq') . "\n";
         foreach ($faqs as $faq) {
             $md .= "\n### " . trim($faq['q']) . "\n" . trim($faq['a']) . "\n";
         }
@@ -1553,7 +1698,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if ($meta['title'] === '') {
             $titleNode = $xpath->query('//*[contains(@class, "ba-item-product-title")]//h1|//h1')->item(0);
             if ($titleNode) {
-                $meta['title'] = trim(preg_replace('/\s+/u', ' ', $titleNode->textContent));
+                $meta['title'] = $this->decodeEntities(preg_replace('/\s+/u', ' ', $titleNode->textContent));
             }
         }
 
@@ -1655,6 +1800,18 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         // Normalise non-breaking/thin spaces (Gridbox formats prices with &nbsp;) before matching
         $priceText = str_replace(["\u{00A0}", "\u{202F}", "\u{2009}"], ' ', $priceText);
 
+        // "final": the price of the product is what the customer pays (e.g. travel agencies with the
+        // margin scheme) - shown as it is, without net / gross / VAT
+        $priceMode = (string) $this->params->get('price_mode', 'net');
+        if ($priceMode === 'final') {
+            $value = $meta['price'] !== '' ? $this->parsePriceNumber($meta['price']) : null;
+            if ($value !== null && $value > 0) {
+                $meta['price'] = $this->botText('PRICE_FINAL', ['{price}' => $this->botNumber($value), '{currency}' => $meta['currency']]);
+            }
+
+            return;
+        }
+
         $vatPercent = (float) str_replace(',', '.', (string) $this->params->get('vat_rate', '23'));
         if ($vatPercent < 0 || $vatPercent > 100) {
             $vatPercent = 23.0;
@@ -1686,7 +1843,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if ($priceNet === null && $priceGross === null && $meta['price'] !== '') {
             $rawPrice = $this->parsePriceNumber($meta['price']);
             if ($rawPrice !== null && $rawPrice > 0) {
-                if (stripos($priceText, 'brutto') !== false && stripos($priceText, 'netto') === false) {
+                if ($priceMode === 'gross' || (stripos($priceText, 'brutto') !== false && stripos($priceText, 'netto') === false)) {
                     $priceGross = $rawPrice;
                 } else {
                     $priceNet = $rawPrice;
@@ -1708,9 +1865,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $meta['vat_rate']    = $vatLabel;
             $meta['currency']    = $currency;
 
-            $netFormatted   = number_format($priceNet, 2, ',', ' ');
-            $grossFormatted = number_format($priceGross, 2, ',', ' ');
-            $meta['price']  = "{$netFormatted} {$currency} netto ({$grossFormatted} {$currency} brutto, {$vatLabel} VAT)";
+            $meta['price'] = $this->botText('PRICE_NET_GROSS', ['{net}' => $this->botNumber($priceNet), '{gross}' => $this->botNumber($priceGross),
+                '{currency}' => $currency, '{vat}' => $vatLabel]);
         }
     }
 
@@ -2094,7 +2250,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
     private function buildLlmsTxtFile(): array
     {
         $app         = $this->getApplication();
-        $siteTitle   = trim((string) $this->params->get('llms_site_title', '')) ?: (string) $app->get('sitename', 'Website');
+        $siteTitle   = $this->decodeEntities(trim((string) $this->params->get('llms_site_title', '')) ?: (string) $app->get('sitename', 'Website'));
+        // the texts of /llms.txt in the site's default language (also when a visitor's page view in
+        // another language starts the regeneration)
+        $this->contentTag = '';
         $siteSummary = trim((string) $this->params->get('llms_site_summary', ''));
         $rootUri     = rtrim(Uri::root(), '/');
         $publicLevels = array_values(array_unique(array_map('intval', Access::getAuthorisedViewLevels(0)))) ?: [1];
@@ -2123,7 +2282,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             if ($url === '' || isset($addedUrls[$url]) || $this->isUrlExcluded($url, $excludeList)) {
                 return;
             }
-            $section .= '- [' . $this->escapeLinkText($title) . '](' . $this->escapeLinkUrl($url) . '): ' . $desc . "\n";
+            $section .= '- [' . $this->escapeLinkText($this->decodeEntities($title)) . '](' . $this->escapeLinkUrl($url) . '): ' . $desc . "\n";
             $addedUrls[$url] = true;
             $totalLinksCount++;
         };
@@ -2148,10 +2307,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         foreach ($db->setQuery($query)->loadAssocList() ?: [] as $item) {
             $url = $this->siteLink('index.php?Itemid=' . (int) $item['id'])
                 ?: ((int) $item['home'] === 1 ? $rootUri . '/' : $rootUri . '/' . $item['path']);
-            $addLink($item['title'], $url, 'Oficjalna podstrona: ' . $this->escapeLinkText($item['title']) . ' serwisu ' . $this->escapeLinkText($siteTitle) . '.', $sectionContent);
+            $addLink($item['title'], $url, $this->botText('LLMS_DESC_PAGE', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $item['title'])),
+                '{site}' => $this->escapeLinkText($siteTitle)], 'llms_desc_page'), $sectionContent);
         }
         if ($sectionContent !== '') {
-            $txt .= "## Główne sekcje\n\n" . $sectionContent . "\n";
+            $txt .= '## ' . $this->botText('LLMS_SECTIONS', [], 'llms_title_sections') . "\n\n" . $sectionContent . "\n";
         }
 
         $gridboxUrlMode   = (string) $this->params->get('llms_gridbox_url_mode', 'menu');
@@ -2199,12 +2359,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 $catDesc = $this->htmlToPlainText((string) ($cat['meta_description'] ?? '') ?: (string) ($cat['description'] ?? ''));
                 $catDesc = $catDesc !== ''
                     ? $this->truncate($catDesc, 120)
-                    : 'Oferta i aparatura w kategorii: ' . $this->escapeLinkText($cat['title']) . '.';
+                    : $this->botText('LLMS_DESC_CATEGORY', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $cat['title']))], 'llms_desc_category');
 
                 $addLink($cat['title'], $url, $catDesc, $sectionContent);
             }
             if ($sectionContent !== '') {
-                $txt .= "## Kategorie i działy tematyczne\n\n" . $sectionContent . "\n";
+                $txt .= '## ' . $this->botText('LLMS_CATEGORIES', [], 'llms_title_categories') . "\n\n" . $sectionContent . "\n";
             }
         }
 
@@ -2281,13 +2441,13 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 }
 
                 $desc = $this->htmlToPlainText((string) ($p['intro_text'] ?? '') ?: (string) ($p['meta_description'] ?? ''));
-                $desc = $desc !== '' ? $this->truncate($desc, 130) : 'Szczegółowy opis, analiza wdrożenia i specyfikacja.';
+                $desc = $desc !== '' ? $this->truncate($desc, 130) : $this->botText('LLMS_DESC_ITEM', [], 'llms_desc_item');
 
                 $addLink($p['title'], $url, $desc, $sectionContent);
             }
 
             if ($sectionContent !== '') {
-                $sectionTitle = ($sortBy === 'hits') ? 'Najpopularniejsze produkty i aparatura pomiarowa' : 'Produkty, wdrożenia i baza wiedzy';
+                $sectionTitle = $sortBy === 'hits' ? $this->botText('LLMS_POPULAR', [], 'llms_title_popular') : $this->botText('LLMS_LATEST', [], 'llms_title_latest');
                 $txt         .= '## ' . $sectionTitle . "\n\n" . $sectionContent . "\n";
             }
         }
@@ -2316,13 +2476,13 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 }
 
                 $desc = $this->htmlToPlainText((string) ($art['metadesc'] ?: $art['introtext']));
-                $desc = $desc !== '' ? $this->truncate($desc, 130) : 'Informacje i publikacje w serwisie.';
+                $desc = $desc !== '' ? $this->truncate($desc, 130) : $this->botText('LLMS_DESC_ARTICLE', [], 'llms_desc_article');
 
                 $addLink($art['title'], $url, $desc, $sectionContent);
             }
 
             if ($sectionContent !== '') {
-                $txt .= "## Baza wiedzy i artykuły\n\n" . $sectionContent . "\n";
+                $txt .= '## ' . $this->botText('LLMS_ARTICLES', [], 'llms_title_articles') . "\n\n" . $sectionContent . "\n";
             }
         }
 
