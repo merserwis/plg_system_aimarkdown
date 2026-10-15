@@ -156,11 +156,13 @@ Access the settings via the new sidebar item: **Components → AI Markdown for G
 | **Settings** | **Extract Tabs & Accordions** | `Yes` | Unrolls hidden Balbooa Gridbox tabs and accordions into sequential Markdown sections (`###`). |
 | **Settings** | **Enable Markdown Cache** | `Yes` | Reduces TTFB from ~2.5s to ~15ms via early disk cache serving. |
 | **Settings** | **Cache Lifetime** | `24 Hours` | Expiration threshold before regenerating cached Markdown. |
+| **Settings** | **Markdown pages: noindex** | `No` | Sends `X-Robots-Tag: noindex` with the Markdown version of a page (never with the HTML page), so search engines keep only the HTML page in their results. The Markdown version always sends a `Link: <…>; rel="canonical"` header pointing at the HTML page. |
 | **Settings** | **Custom Exclude Selectors** | *Empty* | Multi-line textarea for stripping arbitrary elements via CSS (`.promo`, `#chat`) or XPath (`//div[@data-ad]`). |
 | **Settings** | **Show Author** | `Yes` | Includes author attribution in the generated output. |
 | **LLMS.txt** | **Enable /llms.txt Generator** | `No` | Compiles a domain-wide `/llms.txt` file adhering to [llmstxt.org](https://llmstxt.org). |
 | **LLMS.txt** | **Auto-generation Interval** | `24 Hours` | Background scheduler interval (Every 12h, 24h, 5d, 15d, 30d). |
 | **LLMS.txt** | **Exclude URLs from /llms.txt** | *Empty* | Multi-line blacklist for omitting specific paths (`/cart`, `/privacy-policy`). |
+| **LLMS.txt** | **Description length** | `130` | Maximum length of a description in `/llms.txt` (50–500 characters); longer ones are cut after the last whole word and end with `…`. Menu items of *Main sections* use the meta description of the item or of the page it shows, else the generic text. |
 | **LLMS.txt** | **Generate Now Dashboard** | — | Interactive card with animated progress bar, status, link count, and on-demand AJAX generation button. |
 | **Merchant & CTA** | **Enable Merchant Authority & CTA** | `Yes` | Injects seller credentials and customized buying guidelines for GEO. |
 | **Merchant & CTA** | **Merchant / Company Name** | *Empty (Hint)* | Company name injected into YAML Frontmatter (`seller`). |
@@ -193,6 +195,7 @@ Link: <https://www.example.com/your-product>; rel="canonical"; type="text/html"
 X-Markdown-Cache: HIT
 x-markdown-tokens: 842
 ```
+With *Markdown pages: noindex* on, also `X-Robots-Tag: noindex`.
 
 ### 2. Verify `/llms.txt` Generation
 ```bash

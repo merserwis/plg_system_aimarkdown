@@ -631,6 +631,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             header('X-Content-Type-Options: nosniff');
             header('Vary: Accept');
             header('Link: <' . $canonicalUrl . '>; rel="canonical"; type="text/html"');
+            if ((bool) $this->params->get('markdown_noindex', 0)) {
+                // the HTML page stays the one in search results; the Markdown copy is for AI agents
+                header('X-Robots-Tag: noindex');
+            }
             header('Cache-Control: ' . ($public ? 'public, max-age=' . $cacheTtl : 'private, no-store'));
             header('X-Markdown-Cache: ' . $cacheStatus);
             header('x-markdown-tokens: ' . $tokenCount);
@@ -2275,6 +2279,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         $db              = $this->getDatabase();
         $tables          = $db->getTableList();
+        $descLength      = max(50, min(500, (int) $this->params->get('llms_desc_length', 130)));
         $addedUrls       = [];
         $totalLinksCount = 0;
 
@@ -2290,7 +2295,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         // 1. Core Pages (public top-level site menu items, real routes instead of "/alias")
         $menuType = trim((string) $this->params->get('llms_menutype', ''));
         $query    = $db->getQuery(true)
-            ->select($db->quoteName(['id', 'title', 'path', 'home', 'language']))
+            ->select($db->quoteName(['id', 'title', 'path', 'home', 'language', 'link', 'params']))
             ->from($db->quoteName('#__menu'))
             ->where($db->quoteName('client_id') . ' = 0')
             ->where($db->quoteName('published') . ' = 1')
@@ -2307,8 +2312,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         foreach ($db->setQuery($query)->loadAssocList() ?: [] as $item) {
             $url = $this->siteLink('index.php?Itemid=' . (int) $item['id'])
                 ?: ((int) $item['home'] === 1 ? $rootUri . '/' : $rootUri . '/' . $item['path']);
-            $addLink($item['title'], $url, $this->botText('LLMS_DESC_PAGE', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $item['title'])),
-                '{site}' => $this->escapeLinkText($siteTitle)], 'llms_desc_page'), $sectionContent);
+            $itemDesc = $this->menuItemDescription($item, $db, $tables);
+            $addLink($item['title'], $url, $itemDesc !== '' ? $this->truncate($itemDesc, $descLength) : $this->botText('LLMS_DESC_PAGE', [
+                '{title}' => $this->escapeLinkText($this->decodeEntities((string) $item['title'])), '{site}' => $this->escapeLinkText($siteTitle)], 'llms_desc_page'),
+                $sectionContent);
         }
         if ($sectionContent !== '') {
             $txt .= '## ' . $this->botText('LLMS_SECTIONS', [], 'llms_title_sections') . "\n\n" . $sectionContent . "\n";
@@ -2358,7 +2365,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
                 $catDesc = $this->htmlToPlainText((string) ($cat['meta_description'] ?? '') ?: (string) ($cat['description'] ?? ''));
                 $catDesc = $catDesc !== ''
-                    ? $this->truncate($catDesc, 120)
+                    ? $this->truncate($catDesc, $descLength)
                     : $this->botText('LLMS_DESC_CATEGORY', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $cat['title']))], 'llms_desc_category');
 
                 $addLink($cat['title'], $url, $catDesc, $sectionContent);
@@ -2441,7 +2448,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 }
 
                 $desc = $this->htmlToPlainText((string) ($p['intro_text'] ?? '') ?: (string) ($p['meta_description'] ?? ''));
-                $desc = $desc !== '' ? $this->truncate($desc, 130) : $this->botText('LLMS_DESC_ITEM', [], 'llms_desc_item');
+                $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $this->botText('LLMS_DESC_ITEM', [], 'llms_desc_item');
 
                 $addLink($p['title'], $url, $desc, $sectionContent);
             }
@@ -2476,7 +2483,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 }
 
                 $desc = $this->htmlToPlainText((string) ($art['metadesc'] ?: $art['introtext']));
-                $desc = $desc !== '' ? $this->truncate($desc, 130) : $this->botText('LLMS_DESC_ARTICLE', [], 'llms_desc_article');
+                $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $this->botText('LLMS_DESC_ARTICLE', [], 'llms_desc_article');
 
                 $addLink($art['title'], $url, $desc, $sectionContent);
             }
@@ -2643,9 +2650,73 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             . (isset($parts['fragment']) ? '#' . $parts['fragment'] : '');
     }
 
+    /**
+     * A description of at most $length characters, cut after the last whole word (never in the middle of
+     * one, unless a single word is most of the length) and ended with "…".
+     */
     private function truncate(string $text, int $length): string
     {
-        return mb_strlen($text) > $length ? mb_substr($text, 0, $length - 3) . '...' : $text;
+        $text = trim(str_replace("\u{00A0}", ' ', $text));
+        if (mb_strlen($text) <= $length) {
+            return $text;
+        }
+        $cut   = mb_substr($text, 0, $length - 1);
+        $space = mb_strrpos($cut, ' ');
+        if ($space !== false && $space >= (int) floor($length * 0.6)) {
+            $cut = mb_substr($cut, 0, $space);
+        }
+
+        // characters, not bytes (rtrim() with "–" or "—" would cut into other letters of UTF-8)
+        return (preg_replace('/[\s,;:\-–—(\/]+$/u', '', $cut) ?? $cut) . '…';
+    }
+
+    /**
+     * The meta description behind a menu item of /llms.txt: the item's own (Page Display > Meta
+     * Description), else the one of the page it shows — a Gridbox page, a Gridbox category or app, a
+     * Joomla article or category. Plain text; "" when there is none (the generic text is used then).
+     */
+    private function menuItemDescription(array $item, DatabaseInterface $db, array $tables): string
+    {
+        $params = json_decode((string) ($item['params'] ?? ''), true);
+        $own    = $this->htmlToPlainText((string) (is_array($params) ? ($params['menu-meta_description'] ?? '') : ''));
+        if ($own !== '') {
+            return $own;
+        }
+
+        $vars = [];
+        parse_str((string) parse_url((string) ($item['link'] ?? ''), PHP_URL_QUERY), $vars);
+        $option = (string) ($vars['option'] ?? '');
+        $view   = (string) ($vars['view'] ?? '');
+        $id     = (int) ($vars['id'] ?? 0);
+        $lookup = null;
+        if ($option === 'com_gridbox' && $view === 'page' && $id > 0) {
+            $lookup = ['#__gridbox_pages', 'meta_description', $id];
+        } elseif ($option === 'com_gridbox' && $view === 'blog' && $id > 0) {
+            $lookup = ['#__gridbox_categories', 'meta_description', $id];
+        } elseif ($option === 'com_gridbox' && $view === 'blog' && !empty($vars['app'])) {
+            $lookup = ['#__gridbox_app', 'meta_description', (int) $vars['app']];
+        } elseif ($option === 'com_content' && $view === 'article' && $id > 0) {
+            $lookup = ['#__content', 'metadesc', $id];
+        } elseif ($option === 'com_content' && $view === 'category' && $id > 0) {
+            $lookup = ['#__categories', 'metadesc', $id];
+        }
+        if ($lookup === null || !in_array($db->replacePrefix($lookup[0]), $tables, true)) {
+            return '';
+        }
+
+        try {
+            if (!isset($db->getTableColumns($lookup[0])[$lookup[1]])) {
+                return '';
+            }
+            $value = (string) $db->setQuery($db->getQuery(true)
+                ->select($db->quoteName($lookup[1]))
+                ->from($db->quoteName($lookup[0]))
+                ->where($db->quoteName('id') . ' = ' . (int) $lookup[2]))->loadResult();
+        } catch (\Throwable $e) {
+            return '';
+        }
+
+        return $this->htmlToPlainText($value);
     }
 
     /**

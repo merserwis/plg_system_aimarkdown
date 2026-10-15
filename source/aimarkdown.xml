@@ -4,10 +4,10 @@
     <author>Merserwis</author>
     <authorEmail>a.blazewicz@merserwis.pl</authorEmail>
     <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
-    <creationDate>2026-10-14</creationDate>
+    <creationDate>2026-10-15</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.5</version>
+    <version>1.6.6</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -298,6 +298,18 @@
                     <option value="0">JNO</option>
                     <option value="1">JYES</option>
                 </field>
+                <field
+                    name="markdown_noindex"
+                    type="radio"
+                    label="PLG_SYSTEM_AIMARKDOWN_MARKDOWN_NOINDEX_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_MARKDOWN_NOINDEX_DESC"
+                    layout="joomla.form.field.radio.switcher"
+                    default="0"
+                    filter="integer"
+                >
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
 
                 <field
                     name="service_doc_path"
@@ -398,6 +410,18 @@
                     <option value="2000">PLG_SYSTEM_AIMARKDOWN_LLMS_MAX_ITEMS_OPT_2000</option>
                     <option value="0">PLG_SYSTEM_AIMARKDOWN_LLMS_MAX_ITEMS_OPT_0</option>
                 </field>
+                <field
+                    name="llms_desc_length"
+                    type="number"
+                    label="PLG_SYSTEM_AIMARKDOWN_LLMS_DESC_LENGTH_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_LLMS_DESC_LENGTH_DESC"
+                    default="130"
+                    min="50"
+                    max="500"
+                    step="10"
+                    filter="integer"
+                    showon="enable_llmstxt:1"
+                />
 
                 <field
                     name="llms_menutype"

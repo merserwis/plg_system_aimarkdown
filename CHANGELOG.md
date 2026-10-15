@@ -2,6 +2,16 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.6 — 2026-10-15
+
+Two more ideas from the same Portuguese site (thank you again!).
+
+### ✨ Changes
+
+- **Main sections of `/llms.txt` with real descriptions.** A menu item now gets the meta description of the item itself (*Page Display › Meta Description*) or, when it has none, the one of the page it shows — a Gridbox page, a Gridbox category or app, a Joomla article or category. The generic text stays as the fallback.
+- **Descriptions cut after the last whole word.** Descriptions in `/llms.txt` were cut in the middle of a word (“…Reserve online na Natu...”). They now end after the last whole word, with “…”. New setting *Description length* (tab *LLMS.txt*, default 130 characters, 50–500) for all descriptions of the file (categories were 120 before).
+- **Markdown pages: noindex** (tab *Settings*, off by default): sends `X-Robots-Tag: noindex` with the Markdown version of a page (never with the HTML page). The Markdown version already sends a canonical `Link` header pointing at the HTML page, which is enough for search engines to treat the HTML page as the original; noindex makes it explicit.
+
 ## 1.6.5 — 2026-10-14
 
 Changes after feedback from a Portuguese site (thank you!).
