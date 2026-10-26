@@ -4,11 +4,24 @@ All changes of **AI Markdown for Gridbox**, newest first. Each version is also p
 
 ## 1.6.7 — 2026-10-26
 
-The SEO audit of merserwis.pl (an agent-readiness check of the `Link` header) found three relations that point to the wrong things.
+The SEO audit of merserwis.pl (an agent-readiness check) found three relations of the `Link` header that point to the wrong things, a Markdown version that treats every page as a product, and an `/llms.txt` that is too big and puts services among the products.
 
 ### 🛠 Fixes
 
 - **The `Link` header announces only what it should.** `rel="alternate"; type="text/markdown"` stays. Removed: `rel="describedby"` → `/robots.txt` (robots.txt is the site's policy, not metadata of the page) and `rel="service-desc"` → `/llms.txt` (that relation is for machine-readable API descriptions such as OpenAPI). Both files are found by their well-known names. `rel="service-doc"` (documentation of an API) is sent only when *Service Documentation Path* is set, and **the default is now empty**: earlier versions announced `/kontakt`, which on many sites is not a page at all (on merserwis.pl it redirects to the home page). A path saved in the settings stays: clear *Service Documentation Path* on the tab *Settings* if it is `kontakt`.
+- **Markdown of a page that is not a product.** The seller's note above the content (“The device … (code: )”), the call below it and the seller's data in the front matter were put on every page, so a contact page or an article “was available from the official distributor” with an empty code. New setting **Where the seller's note applies** (tab *Merchant & CTA*): *Products only* (the default) or *All pages*. A site that wants the former behaviour chooses *All pages*.
+- **The `type` of the front matter is true.** `product` for a product, `article` for a blog post (a `BlogPosting`, `NewsArticle`, `TechArticle` or `Article` in the page's data), `page` for the rest (it was `article` for every page). A page of the third kind has no `category` any more: the one of the first news card found on the home page was taken for its own (“category: Wydarzenia”).
+- **No menu in the Markdown.** The main menu and the one-page menu of Gridbox and every element with `role="navigation"` are taken out with the header and the footer.
+
+### ✨ Changes in /llms.txt
+
+- **Pages left out by title.** New setting **Leave out of /llms.txt pages with a title containing** (tab *LLMS.txt*), one word per line, case-insensitive: e.g. `[ZAKOŃCZONE]` for promotions that are over but still published.
+- **Gridbox apps listed first.** New setting **Gridbox apps listed first in /llms.txt**: the names of apps (e.g. *Usługi*), one per line. The pages of such an app get a section of their own, titled with the app, above the list of the most popular pages, and are not repeated in it — services are no longer lost among hundreds of products.
+- **Links without generic descriptions.** When a page, category, article or menu item has no description of its own, its link had the same generic sentence of the tab *Texts for AI* (43 times in the audited file). Now the link stays without a description (`- [Title](url)`, as the format allows): the file is shorter and has no templates. New setting **Links without generic descriptions** (on by default); turn it off to bring the sentences back.
+
+### ⬆️ Update
+
+- The Markdown of pages that are not products loses the seller's note, the call and the seller's data after the update (see above for how to bring them back). Regenerate `/llms.txt` on the tab *LLMS.txt* to see the changes in it; to make the file much smaller, lower *Max Products / Pages in /llms.txt* and *Description length*.
 
 ## 1.6.6 — 2026-10-15
 

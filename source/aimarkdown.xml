@@ -385,6 +385,44 @@
                 />
 
                 <field
+                    name="llms_exclude_titles"
+                    type="textarea"
+                    label="PLG_SYSTEM_AIMARKDOWN_LLMS_EXCLUDE_TITLES_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_LLMS_EXCLUDE_TITLES_DESC"
+                    hint="[ZAKOŃCZONE]&#10;[ENDED]"
+                    rows="3"
+                    cols="50"
+                    filter="raw"
+                    showon="enable_llmstxt:1"
+                />
+
+                <field
+                    name="llms_priority_apps"
+                    type="textarea"
+                    label="PLG_SYSTEM_AIMARKDOWN_LLMS_PRIORITY_APPS_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_LLMS_PRIORITY_APPS_DESC"
+                    hint="Usługi&#10;Services"
+                    rows="3"
+                    cols="50"
+                    filter="raw"
+                    showon="enable_llmstxt:1"
+                />
+
+                <field
+                    name="llms_skip_generic"
+                    type="radio"
+                    label="PLG_SYSTEM_AIMARKDOWN_LLMS_SKIP_GENERIC_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_LLMS_SKIP_GENERIC_DESC"
+                    layout="joomla.form.field.radio.switcher"
+                    default="1"
+                    filter="integer"
+                    showon="enable_llmstxt:1"
+                >
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+
+                <field
                     name="llms_sort_by"
                     type="list"
                     label="PLG_SYSTEM_AIMARKDOWN_LLMS_SORT_BY_LABEL"
@@ -467,6 +505,18 @@
                 >
                     <option value="0">JNO</option>
                     <option value="1">JYES</option>
+                </field>
+
+                <field
+                    name="merchant_scope"
+                    type="list"
+                    label="PLG_SYSTEM_AIMARKDOWN_MERCHANT_SCOPE_LABEL"
+                    description="PLG_SYSTEM_AIMARKDOWN_MERCHANT_SCOPE_DESC"
+                    default="product"
+                    showon="enable_merchant_context:1"
+                >
+                    <option value="product">PLG_SYSTEM_AIMARKDOWN_MERCHANT_SCOPE_OPT_PRODUCT</option>
+                    <option value="all">PLG_SYSTEM_AIMARKDOWN_MERCHANT_SCOPE_OPT_ALL</option>
                 </field>
 
                 <field

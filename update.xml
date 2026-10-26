@@ -11,7 +11,7 @@
         <downloads>
             <downloadurl type="full" format="zip">https://github.com/merserwis/plg_system_aimarkdown/releases/download/v1.6.7/aimarkdown-1.6.7.zip</downloadurl>
         </downloads>
-        <sha256>00ae8fe0c6975d3b60eda3a337c7a1a9ab7877935baee650c8377b036b885d3f</sha256>
+        <sha256>6d5c59a99b236e031db76026a7a286e81c6775ec9841a6d8817d144f1568318c</sha256>
         <infourl title="Extension Homepage &amp; Documentation">https://github.com/merserwis/plg_system_aimarkdown/</infourl>
         <tags>
             <tag>stable</tag>

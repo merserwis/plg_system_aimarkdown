@@ -978,6 +978,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             '//*[contains(@class, "ba-header")]',
             '//*[contains(@class, "ba-footer")]',
             '//*[contains(@class, "ba-sticky-header")]',
+            '//*[contains(@class, "ba-item-main-menu")]',
+            '//*[contains(@class, "ba-item-one-page-menu")]',
+            '//*[@role="navigation"]',
             '//*[contains(@class, "ba-cart-modal")]',
             '//*[contains(@class, "com-baforms-wrapper")]',
             '//*[contains(@class, "cookie")]',
@@ -1069,7 +1072,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $md = trim($md);
 
         // 8. Merchant Header Note Injection (Automatically formatted as blockquote)
-        if ((bool) $this->params->get('enable_merchant_context', 1)) {
+        $merchantContext = $this->merchantContextApplies($meta);
+        if ($merchantContext) {
             $headerText = trim((string) $this->params->get('merchant_header_text', ''));
             if ($headerText !== '') {
                 $md = $this->formatAsBlockquote($this->replaceDynamicTags($headerText, $meta)) . "\n\n" . $md;
@@ -1091,7 +1095,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         }
 
         // 11. Merchant Footer CTA Injection
-        if ((bool) $this->params->get('enable_merchant_context', 1)) {
+        if ($merchantContext) {
             $footerText = trim((string) $this->params->get('merchant_footer_text', ''));
             if ($footerText !== '') {
                 $md .= "\n\n" . $this->replaceDynamicTags($footerText, $meta);
@@ -1427,6 +1431,19 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         return $md;
     }
 
+    /**
+     * The seller's data, the note above and the call below the content: on every page or only on
+     * the products (their texts talk about "the device", its code and price).
+     */
+    private function merchantContextApplies(array $meta): bool
+    {
+        if (!(bool) $this->params->get('enable_merchant_context', 1)) {
+            return false;
+        }
+
+        return $this->params->get('merchant_scope', 'product') === 'all' || ($meta['type'] ?? 'page') === 'product';
+    }
+
     private function replaceDynamicTags(string $template, array $meta): string
     {
         $tags = [
@@ -1645,6 +1662,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $meta = [
             'url'          => $canonicalUrl,
             'is_product'   => false,
+            'type'         => 'page',
             'title'        => '',
             'sku'          => '',
             'brand'        => '',
@@ -1745,6 +1763,25 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         // 3. B2B Price Anchoring: Calculate explicit Netto / Brutto & VAT
         if ($meta['is_product'] || $meta['price'] !== '') {
             $this->parseB2bPricing($meta, $xpath);
+        }
+
+        // 4. What the page is: a product, an article (a blog post) or any other page. The category
+        // of the first card found on a home page or a listing is not the category of that page.
+        $meta['type'] = 'page';
+        if ($meta['is_product']) {
+            $meta['type'] = 'product';
+        } else {
+            foreach (['BlogPosting', 'NewsArticle', 'TechArticle', 'Article'] as $articleType) {
+                foreach ($this->jsonLdItems as $item) {
+                    if ($this->jsonLdHasType($item, $articleType)) {
+                        $meta['type'] = 'article';
+                        break 2;
+                    }
+                }
+            }
+        }
+        if ($meta['type'] === 'page') {
+            $meta['category'] = '';
         }
 
         return $meta;
@@ -1878,7 +1915,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         $orderedKeys = [
             'title'        => $meta['title'] ?? '',
-            'type'         => $meta['is_product'] ? 'product' : 'article',
+            'type'         => $meta['type'] ?? ($meta['is_product'] ? 'product' : 'page'),
             'sku'          => $meta['sku'] ?? '',
             'brand'        => $meta['brand'] ?? '',
             'price'        => $meta['price'] ?? '',
@@ -1891,7 +1928,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             'url'          => $meta['url'] ?? '',
         ];
 
-        if ((bool) $this->params->get('enable_merchant_context', 1)) {
+        if ($this->merchantContextApplies($meta)) {
             $sellerName = trim((string) $this->params->get('merchant_name', ''));
             $sellerType = trim((string) $this->params->get('merchant_type', ''));
 
@@ -2279,11 +2316,31 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $addedUrls       = [];
         $totalLinksCount = 0;
 
-        $addLink = function (string $title, string $url, string $desc, string &$section) use (&$addedUrls, &$totalLinksCount, $excludeList): void {
+        // pages whose title contains one of these words are left out (e.g. "[ZAKOŃCZONE]" of ended promotions)
+        $excludeTitles = [];
+        foreach (preg_split('/\r\n|\r|\n/', (string) $this->params->get('llms_exclude_titles', '')) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $excludeTitles[] = mb_strtolower($line);
+            }
+        }
+
+        // a link without a description instead of the same generic sentence under hundreds of links
+        $skipGeneric = (bool) $this->params->get('llms_skip_generic', 1);
+        $generic     = fn (string $key, array $vars, string $setting): string => $skipGeneric ? '' : $this->botText($key, $vars, $setting);
+
+        $addLink = function (string $title, string $url, string $desc, string &$section) use (&$addedUrls, &$totalLinksCount, $excludeList, $excludeTitles): void {
             if ($url === '' || isset($addedUrls[$url]) || $this->isUrlExcluded($url, $excludeList)) {
                 return;
             }
-            $section .= '- [' . $this->escapeLinkText($this->decodeEntities($title)) . '](' . $this->escapeLinkUrl($url) . '): ' . $desc . "\n";
+            $title = $this->decodeEntities($title);
+            $lower = mb_strtolower($title);
+            foreach ($excludeTitles as $word) {
+                if (mb_strpos($lower, $word) !== false) {
+                    return;
+                }
+            }
+            $section .= '- [' . $this->escapeLinkText($title) . '](' . $this->escapeLinkUrl($url) . ')' . ($desc !== '' ? ': ' . $desc : '') . "\n";
             $addedUrls[$url] = true;
             $totalLinksCount++;
         };
@@ -2309,7 +2366,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $url = $this->siteLink('index.php?Itemid=' . (int) $item['id'])
                 ?: ((int) $item['home'] === 1 ? $rootUri . '/' : $rootUri . '/' . $item['path']);
             $itemDesc = $this->menuItemDescription($item, $db, $tables);
-            $addLink($item['title'], $url, $itemDesc !== '' ? $this->truncate($itemDesc, $descLength) : $this->botText('LLMS_DESC_PAGE', [
+            $addLink($item['title'], $url, $itemDesc !== '' ? $this->truncate($itemDesc, $descLength) : $generic('LLMS_DESC_PAGE', [
                 '{title}' => $this->escapeLinkText($this->decodeEntities((string) $item['title'])), '{site}' => $this->escapeLinkText($siteTitle)], 'llms_desc_page'),
                 $sectionContent);
         }
@@ -2362,7 +2419,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 $catDesc = $this->htmlToPlainText((string) ($cat['meta_description'] ?? '') ?: (string) ($cat['description'] ?? ''));
                 $catDesc = $catDesc !== ''
                     ? $this->truncate($catDesc, $descLength)
-                    : $this->botText('LLMS_DESC_CATEGORY', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $cat['title']))], 'llms_desc_category');
+                    : $generic('LLMS_DESC_CATEGORY', ['{title}' => $this->escapeLinkText($this->decodeEntities((string) $cat['title']))], 'llms_desc_category');
 
                 $addLink($cat['title'], $url, $catDesc, $sectionContent);
             }
@@ -2375,7 +2432,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $sortBy   = (string) $this->params->get('llms_sort_by', 'hits');
         $maxItems = max(0, (int) $this->params->get('llms_max_items', 750));
 
-        // 3. Balbooa Gridbox Pages (Sortowane po wyświetleniach / hits)
+        // 3. Balbooa Gridbox Pages (Sortowane po wyświetleniach / hits). Apps named in the setting
+        // "Apps listed first" (e.g. services) get a section of their own above the popular pages.
         if (in_array($db->replacePrefix('#__gridbox_pages'), $tables, true)) {
             $pageColumns  = $db->getTableColumns('#__gridbox_pages');
             $selectFields = ['p.id', 'p.title'];
@@ -2387,68 +2445,112 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
             $hitsColumn = isset($pageColumns['hits']) ? 'hits' : (isset($pageColumns['views']) ? 'views' : '');
 
-            $query = $db->getQuery(true)
-                ->select($db->quoteName($selectFields))
-                ->from($db->quoteName('#__gridbox_pages', 'p'));
-
-            if (isset($pageColumns['published'])) {
-                $query->where($db->quoteName('p.published') . ' = 1');
-            }
-            if (isset($pageColumns['page_access'])) {
-                $query->where($db->quoteName('p.page_access') . ' IN (' . implode(',', $publicLevels) . ')');
-            } elseif (isset($pageColumns['access'])) {
-                $query->where($db->quoteName('p.access') . ' IN (' . implode(',', $publicLevels) . ')');
-            }
-            // as Gridbox lists pages: not in the trash, already published and not ended yet; Gridbox
-            // compares these dates with the time of the site's time zone (DateHelper::make())
-            $gbNow  = $db->quote($this->siteNow());
-            $gbNull = $db->quote($db->getNullDate());
-            if (isset($pageColumns['page_category'])) {
-                $query->where($db->quoteName('p.page_category') . ' <> ' . $db->quote('trashed'));
-            }
-            if (isset($pageColumns['created'])) {
-                $query->where($db->quoteName('p.created') . ' <= ' . $gbNow);
-            }
-            if (isset($pageColumns['end_publishing'])) {
-                $query->where('(' . $db->quoteName('p.end_publishing') . ' = ' . $gbNull . ' OR ' . $db->quoteName('p.end_publishing') . ' IS NULL OR '
-                    . $db->quoteName('p.end_publishing') . ' >= ' . $gbNow . ')');
-            }
-
-            // Sortowanie po wyświetleniach (lub dacie)
-            if ($sortBy === 'hits' && $hitsColumn !== '') {
-                $query->order($db->quoteName('p.' . $hitsColumn) . ' DESC, ' . $db->quoteName('p.id') . ' DESC');
-            } else {
-                $query->order($db->quoteName('p.id') . ' DESC');
-            }
-
-            // Ustaw limit (0 = bez limitu)
-            if ($maxItems > 0) {
-                $query->setLimit($maxItems);
-            }
-
-            $sectionContent = '';
-            foreach ($db->setQuery($query)->loadAssocList() ?: [] as $p) {
-                $url = '';
-                if (isset($gridboxMenu['pages'][(int) $p['id']])) {
-                    // The page has its own menu item: its menu route is the canonical URL.
-                    $url = $gridboxMenu['pages'][(int) $p['id']];
-                } elseif ($useGridboxRouter) {
-                    $url = $this->gridboxLink(
-                        'index.php?option=com_gridbox&view=page&id=' . (int) $p['id'],
-                        $gridboxMenu['apps'][(int) ($p['app_id'] ?? 0)] ?? ''
-                    );
+            $priorityApps  = [];
+            $priorityNames = [];
+            foreach (preg_split('/\r\n|\r|\n/', (string) $this->params->get('llms_priority_apps', '')) ?: [] as $line) {
+                $line = mb_strtolower(trim($line));
+                if ($line !== '') {
+                    $priorityNames[$line] = true;
                 }
-                if ($url === '') {
-                    $slug = !empty($p['alias']) ? $p['alias'] : OutputFilter::stringURLSafe($p['title']);
-                    $url  = $rootUri . '/' . $slug;
+            }
+            if ($priorityNames !== [] && isset($pageColumns['app_id']) && in_array($db->replacePrefix('#__gridbox_app'), $tables, true)) {
+                $appRows = $db->setQuery($db->getQuery(true)->select($db->quoteName(['id', 'title']))->from($db->quoteName('#__gridbox_app'))
+                    ->order($db->quoteName('id') . ' ASC'))->loadAssocList() ?: [];
+                // in the order the names are written in the setting
+                foreach (array_keys($priorityNames) as $name) {
+                    foreach ($appRows as $row) {
+                        if (mb_strtolower(trim($this->decodeEntities((string) $row['title']))) === $name) {
+                            $priorityApps[(int) $row['id']] = $this->decodeEntities((string) $row['title']);
+                        }
+                    }
                 }
-
-                $desc = $this->htmlToPlainText((string) ($p['intro_text'] ?? '') ?: (string) ($p['meta_description'] ?? ''));
-                $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $this->botText('LLMS_DESC_ITEM', [], 'llms_desc_item');
-
-                $addLink($p['title'], $url, $desc, $sectionContent);
             }
 
+            // one section of pages: of the given apps, or of all the others
+            $pagesSection = function (array $onlyApps, array $exceptApps) use (
+                $db, $pageColumns, $selectFields, $hitsColumn, $publicLevels, $sortBy, $maxItems, $useGridboxRouter, $gridboxMenu,
+                $rootUri, $descLength, $addLink, $generic
+            ): string {
+                $query = $db->getQuery(true)
+                    ->select($db->quoteName($selectFields))
+                    ->from($db->quoteName('#__gridbox_pages', 'p'));
+
+                if (isset($pageColumns['published'])) {
+                    $query->where($db->quoteName('p.published') . ' = 1');
+                }
+                if (isset($pageColumns['page_access'])) {
+                    $query->where($db->quoteName('p.page_access') . ' IN (' . implode(',', $publicLevels) . ')');
+                } elseif (isset($pageColumns['access'])) {
+                    $query->where($db->quoteName('p.access') . ' IN (' . implode(',', $publicLevels) . ')');
+                }
+                // as Gridbox lists pages: not in the trash, already published and not ended yet; Gridbox
+                // compares these dates with the time of the site's time zone (DateHelper::make())
+                $gbNow  = $db->quote($this->siteNow());
+                $gbNull = $db->quote($db->getNullDate());
+                if (isset($pageColumns['page_category'])) {
+                    $query->where($db->quoteName('p.page_category') . ' <> ' . $db->quote('trashed'));
+                }
+                if (isset($pageColumns['created'])) {
+                    $query->where($db->quoteName('p.created') . ' <= ' . $gbNow);
+                }
+                if (isset($pageColumns['end_publishing'])) {
+                    $query->where('(' . $db->quoteName('p.end_publishing') . ' = ' . $gbNull . ' OR ' . $db->quoteName('p.end_publishing') . ' IS NULL OR '
+                        . $db->quoteName('p.end_publishing') . ' >= ' . $gbNow . ')');
+                }
+                if ($onlyApps !== []) {
+                    $query->where($db->quoteName('p.app_id') . ' IN (' . implode(',', array_map('intval', $onlyApps)) . ')');
+                }
+                if ($exceptApps !== []) {
+                    $query->where($db->quoteName('p.app_id') . ' NOT IN (' . implode(',', array_map('intval', $exceptApps)) . ')');
+                }
+
+                // Sortowanie po wyświetleniach (lub dacie)
+                if ($sortBy === 'hits' && $hitsColumn !== '') {
+                    $query->order($db->quoteName('p.' . $hitsColumn) . ' DESC, ' . $db->quoteName('p.id') . ' DESC');
+                } else {
+                    $query->order($db->quoteName('p.id') . ' DESC');
+                }
+
+                // Ustaw limit (0 = bez limitu)
+                if ($maxItems > 0) {
+                    $query->setLimit($maxItems);
+                }
+
+                $sectionContent = '';
+                foreach ($db->setQuery($query)->loadAssocList() ?: [] as $p) {
+                    $url = '';
+                    if (isset($gridboxMenu['pages'][(int) $p['id']])) {
+                        // The page has its own menu item: its menu route is the canonical URL.
+                        $url = $gridboxMenu['pages'][(int) $p['id']];
+                    } elseif ($useGridboxRouter) {
+                        $url = $this->gridboxLink(
+                            'index.php?option=com_gridbox&view=page&id=' . (int) $p['id'],
+                            $gridboxMenu['apps'][(int) ($p['app_id'] ?? 0)] ?? ''
+                        );
+                    }
+                    if ($url === '') {
+                        $slug = !empty($p['alias']) ? $p['alias'] : OutputFilter::stringURLSafe($p['title']);
+                        $url  = $rootUri . '/' . $slug;
+                    }
+
+                    $desc = $this->htmlToPlainText((string) ($p['intro_text'] ?? '') ?: (string) ($p['meta_description'] ?? ''));
+                    $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $generic('LLMS_DESC_ITEM', [], 'llms_desc_item');
+
+                    $addLink($p['title'], $url, $desc, $sectionContent);
+                }
+
+                return $sectionContent;
+            };
+
+            // an app listed first has its pages in a section of its own, in the order of the setting
+            foreach ($priorityApps as $appId => $appTitle) {
+                $sectionContent = $pagesSection([$appId], []);
+                if ($sectionContent !== '') {
+                    $txt .= '## ' . $this->escapeLinkText($appTitle) . "\n\n" . $sectionContent . "\n";
+                }
+            }
+
+            $sectionContent = $pagesSection([], array_keys($priorityApps));
             if ($sectionContent !== '') {
                 $sectionTitle = $sortBy === 'hits' ? $this->botText('LLMS_POPULAR', [], 'llms_title_popular') : $this->botText('LLMS_LATEST', [], 'llms_title_latest');
                 $txt         .= '## ' . $sectionTitle . "\n\n" . $sectionContent . "\n";
@@ -2479,7 +2581,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 }
 
                 $desc = $this->htmlToPlainText((string) ($art['metadesc'] ?: $art['introtext']));
-                $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $this->botText('LLMS_DESC_ARTICLE', [], 'llms_desc_article');
+                $desc = $desc !== '' ? $this->truncate($desc, $descLength) : $generic('LLMS_DESC_ARTICLE', [], 'llms_desc_article');
 
                 $addLink($art['title'], $url, $desc, $sectionContent);
             }
