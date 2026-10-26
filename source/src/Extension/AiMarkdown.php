@@ -600,17 +600,13 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             '<' . $this->getAlternateUrl() . '>; rel="alternate"; type="text/markdown"',
         ];
 
-        $serviceDoc = trim((string) $this->params->get('service_doc_path', 'kontakt'), " /\t\n\r");
+        // service-doc (RFC 8631) is the documentation of an API: only when the site has one and the path is set
+        $serviceDoc = trim((string) $this->params->get('service_doc_path', ''), " /\t\n\r");
         if ($serviceDoc !== '') {
             $linkHeaders[] = '<' . $rootUri . $serviceDoc . '>; rel="service-doc"';
         }
-
-        $linkHeaders[] = '<' . $rootUri . 'robots.txt>; rel="describedby"';
-
-        // Ogłoszenie pliku /llms.txt dla botów AI (jeśli funkcja jest włączona w opcjach)
-        if ((bool) $this->params->get('enable_llmstxt', 0)) {
-            $linkHeaders[] = '<' . $rootUri . 'llms.txt>; rel="service-desc"';
-        }
+        // not announced: robots.txt is site policy, not metadata of the page (describedby), and /llms.txt is no
+        // machine-readable API description (service-desc); both are found by their well-known names
 
         $app->setHeader('Link', implode(', ', $linkHeaders), false);
     }

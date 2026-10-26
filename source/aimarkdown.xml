@@ -7,7 +7,7 @@
     <creationDate>2026-10-15</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.6</version>
+    <version>1.6.7</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>
@@ -316,7 +316,7 @@
                     type="text"
                     label="PLG_SYSTEM_AIMARKDOWN_SERVICE_DOC_PATH_LABEL"
                     description="PLG_SYSTEM_AIMARKDOWN_SERVICE_DOC_PATH_DESC"
-                    default="kontakt"
+                    default=""
                     filter="string"
                     showon="show_alternate_link:1"
                 />

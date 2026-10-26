@@ -2,6 +2,14 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.7 — 2026-10-26
+
+The SEO audit of merserwis.pl (an agent-readiness check of the `Link` header) found three relations that point to the wrong things.
+
+### 🛠 Fixes
+
+- **The `Link` header announces only what it should.** `rel="alternate"; type="text/markdown"` stays. Removed: `rel="describedby"` → `/robots.txt` (robots.txt is the site's policy, not metadata of the page) and `rel="service-desc"` → `/llms.txt` (that relation is for machine-readable API descriptions such as OpenAPI). Both files are found by their well-known names. `rel="service-doc"` (documentation of an API) is sent only when *Service Documentation Path* is set, and **the default is now empty**: earlier versions announced `/kontakt`, which on many sites is not a page at all (on merserwis.pl it redirects to the home page). A path saved in the settings stays: clear *Service Documentation Path* on the tab *Settings* if it is `kontakt`.
+
 ## 1.6.6 — 2026-10-15
 
 Two more ideas from the same Portuguese site (thank you again!).

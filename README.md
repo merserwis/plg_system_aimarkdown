@@ -217,7 +217,7 @@ curl -I https://www.example.com/
 HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 Vary: Accept
-Link: <https://www.example.com/?output=markdown>; rel="alternate"; type="text/markdown", <https://www.example.com/kontakt>; rel="service-doc", <https://www.example.com/robots.txt>; rel="describedby", <https://www.example.com/llms.txt>; rel="service-desc"
+Link: <https://www.example.com/?output=markdown>; rel="alternate"; type="text/markdown"
 ```
 
 ---
