@@ -6,7 +6,7 @@
     <creationDate>2026-10-30</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.8</version>
+    <version>1.7.0</version>
     <description>COM_AIMARKDOWN_XML_DESCRIPTION</description>
     <namespace path="src">Merserwis\Component\AiMarkdown</namespace>
     <media destination="com_aimarkdown" folder="media">

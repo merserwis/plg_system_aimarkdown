@@ -2,6 +2,15 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.7.0 — 2026-10-30
+
+The code of 1.6.8 under a new minor number: the administrator panel under *Components → AI Markdown for Gridbox* is a new feature, not a fix, so the version says so. Nothing else changes compared to 1.6.8.
+
+### ⬆️ Update
+
+- From 1.6.8: nothing to do, nothing changes.
+- From 1.6.7 or earlier: read the changes of 1.6.8 below (the new panel, `/llms.txt` with only public items, the hand-made `/llms.txt` kept when the generator is switched off). Settings are kept.
+
 ## 1.6.8 — 2026-10-30
 
 A review of the whole code (done with Codex and checked by hand) and an administrator panel that looks and works like those of MerTools and Better Search.
