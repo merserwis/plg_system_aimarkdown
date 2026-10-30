@@ -657,6 +657,11 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $app        = $this->getApplication();
         $cacheTtl   = (int) $this->params->get('cache_time', 86400);
         $tokenCount = (int) ceil(mb_strlen($markdown) / 4);
+        // browsers and proxies keep the page no longer than the next scheduled start or end of a publication
+        $next = $public ? $this->nextScheduledChange() : 0;
+        if ($next > 0) {
+            $cacheTtl = max(0, min($cacheTtl, $next - time()));
+        }
 
         if (!headers_sent()) {
             http_response_code($status);
@@ -860,6 +865,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $cacheFile = $this->getCacheFilePath($cacheKey);
         $cacheTtl  = (int) $this->params->get('cache_time', 86400);
 
+        // a publication started or ended since the pages were cached: the cache is emptied here
+        $this->nextScheduledChange();
+
         if (is_file($cacheFile) && (time() - (int) @filemtime($cacheFile)) < $cacheTtl) {
             $content = @file_get_contents($cacheFile);
             return ($content !== false && $content !== '') ? str_replace(self::HOST_PLACEHOLDER, $this->currentHost(), $content) : null;
@@ -937,6 +945,74 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
                 @unlink($file);
             }
         }
+        // saved content may bring other dates: looked up again with the next cached page
+        @unlink($this->getCacheDir() . '/schedule.next');
+    }
+
+    /**
+     * The next scheduled start or end of a publication anywhere on the site (Unix time, 0 = none):
+     * a Joomla article (publish_up / publish_down) or a Gridbox page (created / end_publishing).
+     * Neither date is an event, so the cache ends there - also for the lists and pages that link to it.
+     * Looked up once and kept in schedule.next until the cache is emptied; once that time has come,
+     * the whole Markdown cache is emptied and the next date looked up.
+     */
+    private function nextScheduledChange(): int
+    {
+        $marker = $this->getCacheDir() . '/schedule.next';
+        $stored = @file_get_contents($marker);
+        if (is_string($stored) && preg_match('/^\d+$/', trim($stored))) {
+            $next = (int) trim($stored);
+            if ($next === 0 || $next > time()) {
+                return $next;
+            }
+            $this->purgeAllCache();
+        }
+
+        $next = 0;
+        $db   = $this->getDatabase();
+        // Joomla stores article dates in UTC, Gridbox its page dates in the site's time zone
+        $lookups = [
+            ['#__content', ['publish_up', 'publish_down'], ['state' => 1], 'UTC'],
+            ['#__gridbox_pages', ['created', 'end_publishing'], ['published' => 1], (string) $this->getApplication()->get('offset', 'UTC') ?: 'UTC'],
+        ];
+        foreach ($lookups as [$table, $dateColumns, $conditions, $zoneName]) {
+            try {
+                $zone    = new \DateTimeZone($zoneName);
+                $now     = $db->quote((new \DateTime('now', $zone))->format('Y-m-d H:i:s'));
+                $columns = $db->getTableColumns($table);
+                foreach ($dateColumns as $column) {
+                    if (!isset($columns[$column])) {
+                        continue;
+                    }
+                    $query = $db->getQuery(true)
+                        ->select('MIN(' . $db->quoteName($column) . ')')
+                        ->from($db->quoteName($table))
+                        ->where($db->quoteName($column) . ' > ' . $now);
+                    foreach ($conditions as $name => $value) {
+                        if (isset($columns[$name])) {
+                            $query->where($db->quoteName($name) . ' = ' . (int) $value);
+                        }
+                    }
+                    if (isset($columns['page_category'])) {
+                        $query->where($db->quoteName('page_category') . ' <> ' . $db->quote('trashed'));
+                    }
+                    $date = (string) $db->setQuery($query)->loadResult();
+                    if ($date !== '') {
+                        $time = (new \DateTime($date, $zone))->getTimestamp();
+                        $next = $next === 0 ? $time : min($next, $time);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // no such table (no Gridbox) or another database: this source has no dates
+            }
+        }
+
+        $dir = $this->getCacheDir();
+        if (is_dir($dir) || @mkdir($dir, 0755, true)) {
+            @file_put_contents($marker, (string) $next);
+        }
+
+        return $next;
     }
 
     private function getCacheFilePath(string $cacheKey): string

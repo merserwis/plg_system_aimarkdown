@@ -5,7 +5,7 @@
     <creationDate>2026-10-15</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.7.0</version>
+    <version>1.7.1</version>
     <description>MOD_AIMARKDOWN_DASHBOARD_XML_DESCRIPTION</description>
     <files>
         <filename module="mod_aimarkdown_dashboard">mod_aimarkdown_dashboard.php</filename>

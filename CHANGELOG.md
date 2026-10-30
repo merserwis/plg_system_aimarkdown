@@ -2,6 +2,16 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.7.1 — 2026-10-30
+
+### 🛠 Fixes
+
+- **The Markdown cache ends with a scheduled publication.** The start and the end of a publication are not events (nothing is saved then), so a promotion that ended stayed in the cached pages — its own and the lists linking to it — for up to the cache time. The plugin now looks up the nearest future start or end anywhere on the site (Joomla articles: `publish_up` / `publish_down`; Gridbox pages: publication date and end of publication), empties the whole Markdown cache when that time comes and sends no longer `max-age` to browsers and proxies than the time left. The date is looked up once and kept in `administrator/cache/plg_system_aimarkdown/schedule.next` until the cache is emptied (saving content or settings does it).
+
+### ⬆️ Update
+
+- Nothing to do. If you lowered the cache time because of short publications, you can raise it again.
+
 ## 1.7.0 — 2026-10-30
 
 The code of 1.6.8 under a new minor number: the administrator panel under *Components → AI Markdown for Gridbox* is a new feature, not a fix, so the version says so. Nothing else changes compared to 1.6.8.
