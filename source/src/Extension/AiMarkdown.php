@@ -113,7 +113,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         }
 
         // 5. Markdown requests: serve from cache (guests only - see isCacheableRequest())
-        if (!(bool) $this->params->get('enable_cache', 1) || !$this->isCacheableRequest()) {
+        // (a site switched to offline must not keep serving its pages from the cache)
+        if (!(bool) $this->params->get('enable_cache', 1) || !$this->isCacheableRequest() || $app->get('offline')) {
             return;
         }
 
@@ -221,9 +222,9 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $this->purgeAllCache();
 
         $params = json_decode((string) ($table->params ?? ''), true);
-        if (is_array($params) && empty($params['enable_llmstxt']) && is_file($this->getLlmsFilePath())) {
-            // the web server serves the file directly: switched off means removed
-            @unlink($this->getLlmsFilePath());
+        if (is_array($params) && empty($params['enable_llmstxt'])) {
+            // the web server serves the file directly: switched off means removed (our own file only)
+            $this->removeOwnLlmsFile();
         }
     }
 
@@ -233,14 +234,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $input = $app->getInput();
 
         // Gridbox saves its pages and products through its own requests (no content events)
+        // (only from a signed-in manager of Gridbox: a stranger's POST must not empty the cache)
         if ($input->getCmd('option') === 'com_gridbox' && $input->getMethod() === 'POST') {
-            $this->purgeAllCache();
-        }
-
-        // Przekierowanie z bocznego menu "Komponenty" do wtyczki
-        if ($input->getCmd('option') === 'com_aimarkdown') {
-            $app->redirect('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $this->getPluginExtensionId());
-            return;
+            $actor = $app->getIdentity();
+            if ($actor && !$actor->guest && $actor->authorise('core.manage', 'com_gridbox')) {
+                $this->purgeAllCache();
+            }
         }
 
         $action = $input->getCmd('aimarkdown_action', '');
@@ -300,8 +299,10 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
      */
     private function exportSettings(array $form): array
     {
-        $values = isset($form['params']) && is_array($form['params']) ? $form['params'] : json_decode($this->savedParamsJson(), true);
-        $params = array_intersect_key(is_array($values) ? $values : [], $this->settingNames());
+        // the form of a page carries only that page's settings: the others come from what is saved
+        $saved  = json_decode($this->savedParamsJson(), true);
+        $values = array_replace(is_array($saved) ? $saved : [], isset($form['params']) && is_array($form['params']) ? $form['params'] : []);
+        $params = array_intersect_key($values, $this->settingNames());
         ksort($params);
 
         return ['success' => true, 'name' => 'ai-markdown-settings-' . gmdate('Y-m-d') . '.json', 'data' => [
@@ -323,6 +324,22 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $imported = [];
         foreach ($file['params'] as $key => $value) {
             if (!is_string($key) || !isset($names[$key])) {
+                continue;
+            }
+            if ($key === 'auto_faq_items' && is_array($value)) {
+                // the rows of the own FAQ (question + answer), at most 20, as the form takes them
+                $rows = [];
+                foreach (array_slice(array_values($value), 0, 20) as $row) {
+                    if (is_array($row) && is_string($row['question'] ?? null) && is_string($row['answer'] ?? null)
+                        && trim($row['question']) !== '' && trim($row['answer']) !== '') {
+                        $rows['auto_faq_items' . count($rows)] = [
+                            'question' => mb_substr($row['question'], 0, 1000),
+                            'answer'   => mb_substr($row['answer'], 0, 10000),
+                        ];
+                    }
+                }
+                // also an empty list: the file says the site has no own questions
+                $imported[$key] = $rows;
                 continue;
             }
             if (is_bool($value)) {
@@ -370,8 +387,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
         $this->recordSiteBase();
         $this->purgeAllCache();
-        if (empty($params['enable_llmstxt']) && is_file($this->getLlmsFilePath())) {
-            @unlink($this->getLlmsFilePath());
+        if (empty($params['enable_llmstxt'])) {
+            $this->removeOwnLlmsFile();
         }
         // the plugin list (with its parameters) is cached by Joomla
         try {
@@ -456,7 +473,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $this->logAiVisit(rtrim(Uri::root(), '/') . '/llms.txt', 1);
 
         $filePath = $this->getLlmsFilePath();
-        if (!is_file($filePath) && $this->isTrustedHost()) {
+        if (!is_file($filePath) && $this->isTrustedHost() && $this->isLlmsRegenerationDue()) {
             $this->generateLlmsTxtFile();
         }
 
@@ -488,10 +505,30 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         $test   = $input->get('markdown', '', 'cmd');
 
         return (
-            stripos($accept, 'text/markdown') !== false ||
+            $this->acceptsMarkdown($accept) ||
             $output === 'markdown' ||
             $test === '1'
         );
+    }
+
+    /** "text/markdown" is in the Accept header and not refused with q=0 (RFC 9110: "text/html, text/markdown;q=0"). */
+    private function acceptsMarkdown(string $accept): bool
+    {
+        foreach (explode(',', $accept) as $range) {
+            $parts = array_map('trim', explode(';', $range));
+            if (strcasecmp($parts[0], 'text/markdown') !== 0) {
+                continue;
+            }
+            foreach (array_slice($parts, 1) as $parameter) {
+                if (preg_match('/^q\s*=\s*([0-9.]+)$/i', $parameter, $m) && (float) $m[1] <= 0.0) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1789,7 +1826,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
 
     /**
      * Turn a Polish/international price string into a float.
-     * Handles "1 234,56", "1.234,56", "1,234.56", "1234.56" and non-breaking/thin spaces.
+     * Handles "1 234,56", "1.234,56", "1,234.56", "1,234", "1234.56" and non-breaking/thin spaces.
      */
     private function parsePriceNumber(string $raw): ?float
     {
@@ -1808,7 +1845,8 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             $clean     = str_replace($thousands, '', $clean);
             $clean     = str_replace($decimal, '.', $clean);
         } elseif ($lastComma !== false) {
-            $clean = str_replace(',', '.', $clean);
+            // "1,234" or "12,345,678" = thousands grouping (as the dot below), "12,50" = decimals
+            $clean = preg_match('/^\d{1,3}(,\d{3})+$/', $clean) ? str_replace(',', '', $clean) : str_replace(',', '.', $clean);
         } elseif ($lastDot !== false && preg_match('/^\d{1,3}(\.\d{3})+$/', $clean)) {
             // "1.234" or "12.345.678" = thousands grouping, not decimals
             $clean = str_replace('.', '', $clean);
@@ -2224,6 +2262,41 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         return JPATH_ROOT . '/llms.txt';
     }
 
+    /** the SHA-256 of the file this plugin wrote last: what tells its /llms.txt from one kept by hand */
+    private function getLlmsOwnerPath(): string
+    {
+        return $this->getCacheDir() . '/llms.owner';
+    }
+
+    /**
+     * Removes /llms.txt when the plugin made it and nobody has changed it since. A file kept by hand
+     * (or edited after the plugin wrote it) stays. Files of versions before 1.6.8 left no hash: those
+     * count as ours when the plugin has ever tried to generate one. The file that was there before the
+     * first generation (llms.original.txt) is put back.
+     */
+    private function removeOwnLlmsFile(): void
+    {
+        $file = $this->getLlmsFilePath();
+        if (!is_file($file)) {
+            return;
+        }
+        $owner = $this->getLlmsOwnerPath();
+        $own   = is_file($owner)
+            ? hash_equals(trim((string) @file_get_contents($owner)), (string) @hash_file('sha256', $file))
+            : is_file($this->getCacheDir() . '/llms.attempt');
+        if (!$own) {
+            return;
+        }
+        @unlink($file);
+        // the plugin no longer manages the file: a /llms.txt written by hand afterwards is not taken for its own
+        @unlink($owner);
+        @unlink($this->getCacheDir() . '/llms.attempt');
+        $original = $this->getCacheDir() . '/llms.original.txt';
+        if (is_file($original) && @copy($original, $file)) {
+            @unlink($original);
+        }
+    }
+
     /**
      * Check if /llms.txt needs to be regenerated based on configured interval.
      * Attempts are throttled, so an unwritable site root no longer triggers a full
@@ -2258,6 +2331,12 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if ($lock && !flock($lock, LOCK_EX | LOCK_NB)) {
             fclose($lock);
             return ['success' => false, 'message' => Text::_('PLG_SYSTEM_AIMARKDOWN_LLMS_IN_PROGRESS')];
+        }
+
+        // a file that is there and is not ours (no record of ours, no earlier attempt): kept aside before it is replaced
+        $target = $this->getLlmsFilePath();
+        if (is_file($target) && !is_file($this->getLlmsOwnerPath()) && !is_file($cacheDir . '/llms.attempt') && !is_file($cacheDir . '/llms.original.txt')) {
+            @copy($target, $cacheDir . '/llms.original.txt');
         }
 
         @touch($cacheDir . '/llms.attempt');
@@ -2561,15 +2640,19 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         if (in_array($db->replacePrefix('#__content'), $tables, true)) {
             $now   = $db->quote(Factory::getDate()->toSql());
             $query = $db->getQuery(true)
-                ->select($db->quoteName(['id', 'catid', 'language', 'title', 'alias', 'introtext', 'metadesc']))
-                ->from($db->quoteName('#__content'))
-                ->where($db->quoteName('state') . ' = 1')
-                ->where($db->quoteName('access') . ' IN (' . implode(',', $publicLevels) . ')')
-                ->where('(' . $db->quoteName('publish_up') . ' IS NULL OR ' . $db->quoteName('publish_up') . ' <= ' . $now . ')')
-                ->where('(' . $db->quoteName('publish_down') . ' IS NULL OR ' . $db->quoteName('publish_down') . ' > ' . $now . ')')
+                ->select($db->quoteName(['a.id', 'a.catid', 'a.language', 'a.title', 'a.alias', 'a.introtext', 'a.metadesc'], ['id', 'catid', 'language', 'title', 'alias', 'introtext', 'metadesc']))
+                ->from($db->quoteName('#__content', 'a'))
+                // an article of an unpublished or non-public category is not public either
+                ->join('INNER', $db->quoteName('#__categories', 'c') . ' ON ' . $db->quoteName('c.id') . ' = ' . $db->quoteName('a.catid'))
+                ->where($db->quoteName('c.published') . ' = 1')
+                ->where($db->quoteName('c.access') . ' IN (' . implode(',', $publicLevels) . ')')
+                ->where($db->quoteName('a.state') . ' = 1')
+                ->where($db->quoteName('a.access') . ' IN (' . implode(',', $publicLevels) . ')')
+                ->where('(' . $db->quoteName('a.publish_up') . ' IS NULL OR ' . $db->quoteName('a.publish_up') . ' <= ' . $now . ')')
+                ->where('(' . $db->quoteName('a.publish_down') . ' IS NULL OR ' . $db->quoteName('a.publish_down') . ' > ' . $now . ')')
                 ->order($sortBy === 'hits'
-                    ? $db->quoteName('hits') . ' DESC, ' . $db->quoteName('id') . ' DESC'
-                    : $db->quoteName('id') . ' DESC')
+                    ? $db->quoteName('a.hits') . ' DESC, ' . $db->quoteName('a.id') . ' DESC'
+                    : $db->quoteName('a.id') . ' DESC')
                 ->setLimit(150);
 
             $sectionContent = '';
@@ -2601,6 +2684,7 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
         }
 
         clearstatcache(true, $targetPath);
+        @file_put_contents($this->getLlmsOwnerPath(), hash('sha256', $txt));
 
         return [
             'success'     => true,
@@ -2806,10 +2890,24 @@ final class AiMarkdown extends CMSPlugin implements SubscriberInterface, Databas
             if (!isset($db->getTableColumns($lookup[0])[$lookup[1]])) {
                 return '';
             }
-            $value = (string) $db->setQuery($db->getQuery(true)
+            $columns = $db->getTableColumns($lookup[0]);
+            $levels  = implode(',', array_values(array_unique(array_map('intval', Access::getAuthorisedViewLevels(0)))) ?: [1]);
+            $query   = $db->getQuery(true)
                 ->select($db->quoteName($lookup[1]))
                 ->from($db->quoteName($lookup[0]))
-                ->where($db->quoteName('id') . ' = ' . (int) $lookup[2]))->loadResult();
+                ->where($db->quoteName('id') . ' = ' . (int) $lookup[2]);
+            // the description of a page that visitors cannot see is not written into a public file
+            foreach (['published' => 1, 'state' => 1] as $column => $value) {
+                if (isset($columns[$column])) {
+                    $query->where($db->quoteName($column) . ' = ' . $value);
+                }
+            }
+            foreach (['access', 'page_access'] as $column) {
+                if (isset($columns[$column])) {
+                    $query->where($db->quoteName($column) . ' IN (' . $levels . ')');
+                }
+            }
+            $value = (string) $db->setQuery($query)->loadResult();
         } catch (\Throwable $e) {
             return '';
         }

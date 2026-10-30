@@ -131,7 +131,7 @@ class AnalyticsField extends FormField
             <!-- Header bar with AJAX Clear Statistics Button -->
             <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
                 <div>
-                    <h5 class="mb-0 fw-bold text-dark"><?php echo $t('ANALYTICS_TITLE'); ?></h5>
+                    <h3 class="h4 mb-0"><?php echo $t('ANALYTICS_TITLE'); ?></h3>
                     <small class="text-muted"><?php echo $tn('ANALYTICS_DISPLAY_LIMIT_N', $displayLimit); ?></small>
                 </div>
                 <button type="button"
@@ -145,27 +145,27 @@ class AnalyticsField extends FormField
             <!-- KPI Cards -->
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
-                    <div class="card bg-light border-0 shadow-sm text-center p-3">
+                    <div class="card bg-body-tertiary border-0 text-center p-3">
                         <div class="text-muted small text-uppercase"><?php echo $t('KPI_VISITS'); ?></div>
                         <div class="fs-2 fw-bold text-primary"><?php echo number_format($totalVisits); ?></div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-light border-0 shadow-sm text-center p-3">
+                    <div class="card bg-body-tertiary border-0 text-center p-3">
                         <div class="text-muted small text-uppercase"><?php echo $t('KPI_HIT_RATE'); ?></div>
                         <div class="fs-2 fw-bold text-success"><?php echo $hitRate; ?>%</div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-light border-0 shadow-sm text-center p-3">
+                    <div class="card bg-body-tertiary border-0 text-center p-3">
                         <div class="text-muted small text-uppercase"><?php echo $t('KPI_UNIQUE_BOTS'); ?></div>
                         <div class="fs-2 fw-bold text-info"><?php echo count($botStats); ?></div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-light border-0 shadow-sm text-center p-3">
+                    <div class="card bg-body-tertiary border-0 text-center p-3">
                         <div class="text-muted small text-uppercase"><?php echo $t('KPI_TOP_BOT'); ?></div>
-                        <div class="fs-5 fw-bold text-dark mt-2 text-truncate" title="<?php echo htmlspecialchars($topBot, ENT_QUOTES, 'UTF-8'); ?>">
+                        <div class="fs-5 fw-bold text-body mt-2 text-truncate" title="<?php echo htmlspecialchars($topBot, ENT_QUOTES, 'UTF-8'); ?>">
                             <?php echo htmlspecialchars($topBot, ENT_QUOTES, 'UTF-8'); ?>
                         </div>
                     </div>
@@ -175,7 +175,7 @@ class AnalyticsField extends FormField
             <!-- ========================================== -->
             <!-- DEDICATED SECTION FOR /llms.txt FILE       -->
             <!-- ========================================== -->
-            <div class="card border border-primary-subtle shadow-sm mb-4">
+            <div class="card border border-primary-subtle mb-4">
                 <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center py-2">
                     <h6 class="mb-0 fw-bold text-primary">
                         <span class="icon-file-text" aria-hidden="true"></span> <?php echo $t('ANALYTICS_LLMS_TITLE'); ?>
@@ -239,8 +239,8 @@ class AnalyticsField extends FormField
             <!-- Bot Distribution & Top Pages (General) -->
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
-                    <div class="card border p-3 h-100 shadow-sm">
-                        <h5 class="card-title mb-3"><?php echo $t('ANALYTICS_BREAKDOWN'); ?></h5>
+                    <div class="card p-3 h-100">
+                        <h3 class="card-title h5 mb-3"><?php echo $t('ANALYTICS_BREAKDOWN'); ?></h3>
                         <?php foreach ($botStats as $stat): 
                             $pct = round(($stat['count'] / $totalVisits) * 100, 1);
                         ?>
@@ -258,8 +258,8 @@ class AnalyticsField extends FormField
                 </div>
 
                 <div class="col-md-6">
-                    <div class="card border p-3 h-100 shadow-sm">
-                        <h5 class="card-title mb-3"><?php echo $tn('ANALYTICS_TOP_PAGES_N', $displayLimit); ?></h5>
+                    <div class="card p-3 h-100">
+                        <h3 class="card-title h5 mb-3"><?php echo $tn('ANALYTICS_TOP_PAGES_N', $displayLimit); ?></h3>
                         <ul class="list-group list-group-flush">
                             <?php foreach ($topPages as $page): ?>
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
@@ -275,8 +275,8 @@ class AnalyticsField extends FormField
             </div>
 
             <!-- Recent Logs Table -->
-            <div class="card border p-3 shadow-sm">
-                <h5 class="card-title mb-3"><?php echo $tn('ANALYTICS_LATEST_N', $displayLimit); ?></h5>
+            <div class="card p-3">
+                <h3 class="card-title h5 mb-3"><?php echo $tn('ANALYTICS_LATEST_N', $displayLimit); ?></h3>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped table-hover align-middle mb-0">
                         <thead>
@@ -292,7 +292,7 @@ class AnalyticsField extends FormField
                             <?php foreach ($recentLogs as $log): ?>
                                 <tr>
                                     <td><?php echo HTMLHelper::_('date', $log['created_at'], 'Y-m-d H:i:s'); ?></td>
-                                    <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                    <td><span class="badge bg-body-secondary text-body border"><?php echo htmlspecialchars($log['bot_name'], ENT_QUOTES, 'UTF-8'); ?></span></td>
                                     <td class="text-truncate" style="max-width: 250px;">
                                         <a href="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="<?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?>">
                                             <bdi dir="ltr"><?php echo htmlspecialchars($log['url'], ENT_QUOTES, 'UTF-8'); ?></bdi>

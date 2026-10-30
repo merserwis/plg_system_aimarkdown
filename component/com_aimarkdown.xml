@@ -2,14 +2,31 @@
 <extension type="component" client="administrator" method="upgrade">
     <name>COM_AIMARKDOWN</name>
     <author>Merserwis</author>
-    <creationDate>2026-10-15</creationDate>
-    <version>1.6.6</version>
+    <authorUrl>https://github.com/merserwis/plg_system_aimarkdown/</authorUrl>
+    <creationDate>2026-10-30</creationDate>
+    <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
+    <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
+    <version>1.6.8</version>
     <description>COM_AIMARKDOWN_XML_DESCRIPTION</description>
+    <namespace path="src">Merserwis\Component\AiMarkdown</namespace>
+    <media destination="com_aimarkdown" folder="media">
+        <filename>joomla.asset.json</filename>
+        <folder>css</folder>
+    </media>
     <administration>
         <menu img="class:robot">COM_AIMARKDOWN</menu>
+        <!-- the pages used day to day; the cog opens their settings (Helper/Catalog.php) -->
+        <submenu>
+            <menu link="option=com_aimarkdown&amp;view=cpanel" alias="aimarkdown-cpanel">COM_AIMARKDOWN_MENU_CPANEL</menu>
+            <menu link="option=com_aimarkdown&amp;view=page&amp;page=basic" alias="aimarkdown-basic">COM_AIMARKDOWN_MENU_BASIC</menu>
+            <menu link="option=com_aimarkdown&amp;view=page&amp;page=llmstxt" alias="aimarkdown-llmstxt">COM_AIMARKDOWN_MENU_LLMSTXT</menu>
+            <menu link="option=com_aimarkdown&amp;view=page&amp;page=analytics" alias="aimarkdown-analytics">COM_AIMARKDOWN_MENU_ANALYTICS</menu>
+        </submenu>
         <files folder="admin">
-            <filename>aimarkdown.php</filename>
             <folder>language</folder>
+            <folder>services</folder>
+            <folder>src</folder>
+            <folder>tmpl</folder>
         </files>
         <languages folder="admin/language">
             <language tag="en-GB">en-GB/com_aimarkdown.ini</language>

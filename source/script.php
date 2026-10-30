@@ -113,8 +113,19 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
         }
 
         // /llms.txt made by this plugin is served by the web server directly: it goes with the plugin
-        if (is_file(JPATH_CACHE . '/plg_system_aimarkdown/llms.attempt') && is_file(JPATH_ROOT . '/llms.txt')) {
-            @unlink(JPATH_ROOT . '/llms.txt');
+        // (a file kept by hand, or changed after the plugin wrote it, stays)
+        $dir = JPATH_CACHE . '/plg_system_aimarkdown';
+        if (is_file(JPATH_ROOT . '/llms.txt')) {
+            $own = is_file($dir . '/llms.owner')
+                ? hash_equals(trim((string) @file_get_contents($dir . '/llms.owner')), (string) @hash_file('sha256', JPATH_ROOT . '/llms.txt'))
+                : is_file($dir . '/llms.attempt');
+            if ($own) {
+                @unlink(JPATH_ROOT . '/llms.txt');
+                // the file that was there before the plugin's first generation comes back
+                if (is_file($dir . '/llms.original.txt')) {
+                    @copy($dir . '/llms.original.txt', JPATH_ROOT . '/llms.txt');
+                }
+            }
         }
         $this->deleteDirectoryRecursively(JPATH_CACHE . '/plg_system_aimarkdown');
 
@@ -274,6 +285,8 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
     {
         $obsoleteFiles = [
             JPATH_PLUGINS . '/system/aimarkdown/src/Field/LlmsGeneratorField.php',
+            // until 1.6.7 the component was a bare redirect to the plugin settings; its pages are an MVC component now
+            JPATH_ADMINISTRATOR . '/components/com_aimarkdown/aimarkdown.php',
         ];
 
         foreach ($obsoleteFiles as $file) {
@@ -335,7 +348,13 @@ class PlgSystemAimarkdownInstallerScript extends InstallerScript
      */
     private function clearCaches(): void
     {
-        $this->deleteDirectoryRecursively(JPATH_CACHE . '/plg_system_aimarkdown');
+        // only the Markdown pages: the state of /llms.txt in the same folder (llms.owner, llms.attempt, llms.base and
+        // llms.original.txt, the only copy of a file kept by hand before the first generation) must survive an update
+        foreach (glob(JPATH_CACHE . '/plg_system_aimarkdown/*') ?: [] as $file) {
+            if (is_file($file) && preg_match('/\.(md|tmp)$/', $file)) {
+                @unlink($file);
+            }
+        }
 
         try {
             $cache = Factory::getContainer()->get(CacheControllerFactoryInterface::class)

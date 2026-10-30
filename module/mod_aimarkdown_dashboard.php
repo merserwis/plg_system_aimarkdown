@@ -47,20 +47,11 @@ $query = $db->getQuery(true)
 $db->setQuery($query);
 $lastBot = $db->loadAssoc() ?: ['bot_name' => Text::_('MOD_AIMARKDOWN_DASHBOARD_NONE'), 'created_at' => '-'];
 
-// Pobierz ID wtyczki do linku
-$query = $db->getQuery(true)
-    ->select($db->quoteName('extension_id'))
-    ->from($db->quoteName('#__extensions'))
-    ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
-    ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
-    ->where($db->quoteName('element') . ' = ' . $db->quote('aimarkdown'));
-$db->setQuery($query);
-$pluginId = (int) $db->loadResult();
-$settingsUrl = Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $pluginId);
+$settingsUrl = Route::_('index.php?option=com_aimarkdown');
 $t = fn (string $key): string => htmlspecialchars(Text::_('MOD_AIMARKDOWN_DASHBOARD_' . $key), ENT_QUOTES, 'UTF-8');
 ?>
 
-<div class="card mb-3 shadow-sm border-0">
+<div class="card mb-3">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="card-title mb-0 fw-bold text-primary">
@@ -73,19 +64,19 @@ $t = fn (string $key): string => htmlspecialchars(Text::_('MOD_AIMARKDOWN_DASHBO
 
         <div class="row g-2 text-center mb-3">
             <div class="col-4">
-                <div class="p-2 bg-light rounded">
-                    <div class="fs-4 fw-bold text-dark"><?php echo $visits24h; ?></div>
+                <div class="p-2 bg-body-tertiary rounded">
+                    <div class="fs-4 fw-bold text-body"><?php echo $visits24h; ?></div>
                     <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('TODAY'); ?></div>
                 </div>
             </div>
             <div class="col-4">
-                <div class="p-2 bg-light rounded">
+                <div class="p-2 bg-body-tertiary rounded">
                     <div class="fs-4 fw-bold text-primary"><?php echo $visits30d; ?></div>
                     <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('DAYS_30'); ?></div>
                 </div>
             </div>
             <div class="col-4">
-                <div class="p-2 bg-light rounded">
+                <div class="p-2 bg-body-tertiary rounded">
                     <div class="fs-4 fw-bold text-success"><?php echo $hitRate; ?>%</div>
                     <div class="small text-muted text-uppercase" style="font-size: 10px;"><?php echo $t('CACHE_HIT'); ?></div>
                 </div>

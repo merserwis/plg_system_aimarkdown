@@ -29,14 +29,14 @@ class SettingsfileField extends FormField
 
         ob_start();
         ?>
-        <div class="card bg-light border p-3 my-2 shadow-sm" id="aimd-settings-file">
-            <h6 class="mb-1 fw-bold text-dark"><?php echo $t('SETTINGS_TITLE'); ?></h6>
+        <div class="card bg-body-tertiary p-3 my-2" id="aimd-settings-file">
+            <h3 class="h5 mb-1"><?php echo $t('SETTINGS_TITLE'); ?></h3>
             <p class="small text-muted mb-3"><?php echo $t('SETTINGS_DESC'); ?></p>
             <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-primary" data-aimd-settings="export">
+                <button type="button" class="btn btn-outline-primary" data-aimd-settings="export">
                     <span class="icon-download" aria-hidden="true"></span> <?php echo $t('SETTINGS_EXPORT'); ?>
                 </button>
-                <label class="btn btn-secondary mb-0">
+                <label class="btn btn-outline-secondary mb-0">
                     <span class="icon-upload" aria-hidden="true"></span> <?php echo $t('SETTINGS_IMPORT'); ?>
                     <input type="file" accept=".json,application/json" data-aimd-settings="import" hidden>
                 </label>

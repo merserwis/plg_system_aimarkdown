@@ -39,10 +39,10 @@ class LlmsField extends FormField
 
         ob_start();
         ?>
-        <div class="card bg-light border p-3 my-2 shadow-sm">
+        <div class="card bg-body-tertiary p-3 my-2">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
-                    <h6 class="mb-1 fw-bold text-dark"><?php echo $t('LLMS_FILE_STATUS'); ?></h6>
+                    <h3 class="h5 mb-1"><?php echo $t('LLMS_FILE_STATUS'); ?></h3>
                     <small class="text-muted"><?php echo $t('LLMS_TARGET_PATH'); ?> <code><?php echo htmlspecialchars($filePath, ENT_QUOTES, 'UTF-8'); ?></code></small>
                 </div>
                 <div>
@@ -57,19 +57,19 @@ class LlmsField extends FormField
             <!-- Kafelki ze statystykami pliku -->
             <div class="row g-2 text-center mb-3">
                 <div class="col-md-4">
-                    <div class="p-2 bg-white rounded border">
+                    <div class="p-2 bg-body rounded border">
                         <div class="small text-muted text-uppercase" style="font-size: 11px;"><?php echo $t('LLMS_LAST_MODIFIED'); ?></div>
                         <div class="fw-bold" id="llms-date"><?php echo htmlspecialchars($fileDate, ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="p-2 bg-white rounded border">
+                    <div class="p-2 bg-body rounded border">
                         <div class="small text-muted text-uppercase" style="font-size: 11px;"><?php echo $t('LLMS_FILE_SIZE'); ?></div>
                         <div class="fw-bold text-primary" id="llms-size"><?php echo htmlspecialchars($fileSize, ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="p-2 bg-white rounded border">
+                    <div class="p-2 bg-body rounded border">
                         <div class="small text-muted text-uppercase" style="font-size: 11px;"><?php echo $t('LLMS_LINKS_COUNT'); ?></div>
                         <div class="fs-6 fw-bold text-success" id="llms-links"><?php echo htmlspecialchars(Text::plural('PLG_SYSTEM_AIMARKDOWN_LLMS_LINKS_N', (int) $linksCount), ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>

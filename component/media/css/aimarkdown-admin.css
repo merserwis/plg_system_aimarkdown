@@ -1,0 +1,36 @@
+/*
+ * AI Markdown for Gridbox — the control panel (tiles of the parts of the settings in sections, as in Admin
+ * Tools, MerTools and Better Search) and the pages of settings. Colours from Atum's variables, so its dark mode applies.
+ */
+
+/* ------------------------------------------------------------------ control panel */
+.aimc-cpanel .card-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; }
+.aimc-section-desc { margin: 0; font-size: .875rem; color: var(--bs-secondary-color, #6c757d); }
+.aimc-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.aimc-tile { display: flex; flex-direction: column; align-items: center; gap: .35rem; height: 100%; padding: 0 0 .5rem; text-align: center;
+  text-decoration: none; color: var(--template-text-dark, #22262a); border-radius: .375rem; }
+.aimc-tile:hover, .aimc-tile:focus-visible { text-decoration: none; color: var(--template-link-color, #2a69b8); }
+.aimc-tile:focus-visible { outline: 2px solid var(--template-link-color, #2a69b8); outline-offset: 2px; }
+.aimc-tile-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 3.5rem; border-radius: .25rem;
+  background: var(--aimc-tile, #132f53); color: #fff; font-size: 1.5rem; transition: filter .15s; }
+.aimc-tile:hover .aimc-tile-icon { filter: brightness(1.15); }
+.aimc-tile-name { font-size: .9rem; line-height: 1.3; }
+.aimc-tile-state { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; color: var(--bs-secondary-color, #6c757d); }
+.aimc-dot { width: .55rem; height: .55rem; border-radius: 50%; background: #adb5bd; }
+.aimc-tile-on .aimc-dot { background: #2f7d32; }
+.aimc-tile-off .aimc-tile-icon { filter: saturate(.35) opacity(.8); }
+.aimc-tile-off:hover .aimc-tile-icon { filter: none; }
+
+/* the colours of the sections */
+.aimc-group-markdown { --aimc-tile: #132f53; }
+.aimc-group-llms { --aimc-tile: #2f6f4f; }
+.aimc-group-insights { --aimc-tile: #6a4c93; }
+.aimc-group-config { --aimc-tile: #5a6470; }
+
+.aimc-check { border-inline-start: .3rem solid #c77c02; }
+.aimc-status-count { font-size: 1.1rem; font-weight: 600; }
+.aimc-status dt { font-weight: 400; color: var(--bs-secondary-color, #6c757d); }
+.aimc-status dd { margin-bottom: .35rem; }
+
+/* ------------------------------------------------------------------ pages of settings */
+.aimc-page-desc { max-width: 60rem; font-size: 1rem; }

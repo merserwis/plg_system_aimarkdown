@@ -34,6 +34,9 @@ class HelpField extends FormField
 .bs-help-tip p{margin:0 0 .35rem}.bs-help-tip p:last-child{margin:0}
 .bs-help-tip a{color:#9ec5fe}
 .bs-help-tip code{color:#ffd8a8}
+/* the description now in the tooltip is not shown twice (as in MerTools); the text stays in the page for screen readers */
+.control-group.bs-has-help>.controls>[id$="-desc"],.control-group.bs-has-help>.controls>.form-text{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* the cards of the llms.txt, analytics and settings-file panels follow Atum's colours (dark mode too) */
 CSS);
         $label = json_encode(Text::_('PLG_SYSTEM_AIMARKDOWN_HELP'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
         $wa->addInlineScript('(() => {' . "\n" . <<<'JS'
@@ -71,9 +74,10 @@ CSS);
         b.setAttribute('aria-describedby', tip.id);
         wrap.append(b, tip);
         head.appendChild(wrap);
+        g.classList.add('bs-has-help');
       });
     };
-    form.addEventListener('click', (e) => {
+    document.addEventListener('click', (e) => {
       const b = e.target.closest && e.target.closest('.bs-help');
       if (!b) {
         if (!(e.target.closest && e.target.closest('.bs-help-tip'))) closeAll(null);

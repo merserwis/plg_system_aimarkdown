@@ -23,7 +23,7 @@ Fully tailored for **Balbooa Gridbox** (Store, Blog, Case Studies & Pages), elim
 * **Balbooa Gridbox Tab & Accordion Unrolling:** Extracts content from collapsed or hidden tabs (`.ba-item-tabs`, `.tab-pane`) and accordions (`.ba-item-accordion`), converting them into sequential Markdown headings (`###`).
 * **Universal PDF Datasheet Prioritization:** Scans the entire page for `.pdf` links (datasheets, user manuals, certificates), normalizes relative paths to absolute HTTPS URLs, and compiles a clean `## Downloads & Documentation` section.
 * **Embedded AI Analytics Dashboard:** Privacy-first, 100% local database logging in Joomla backend. Tracks 30-day AI visits, Cache Hit Rate, crawler distribution, top visited products, and a dedicated analytics card for `/llms.txt` downloads.
-* **Joomla Package Suite:** Bundles the System Plugin, Administrator Sidebar Shortcut (`com_aimarkdown`), and Home Dashboard Widget (`mod_aimarkdown_dashboard`) into a single atomic installer.
+* **Joomla Package Suite:** Bundles the System Plugin, the administrator panel (`com_aimarkdown`: control panel with tiles, pages of settings, same look as MerTools and Better Search), and Home Dashboard Widget (`mod_aimarkdown_dashboard`) into a single atomic installer.
 * **Zero Remote Telemetry:** 100% self-hosted, independent, and GDPR/RODO compliant.
 * **6 administrator languages:** English (default), German, Polish, French, Czech and Dutch — plugin settings, the llms.txt panel, the analytics dashboard, the dashboard widget and all messages. The language follows the Joomla administrator language; for other languages the texts are in English. The generated Markdown and `/llms.txt` use the language of the content (see *Texts for AI*), not the administrator's.
 * **Settings file (new in 1.6.2):** export every setting — with the contents of the text fields and changes not saved yet — to a JSON file, import it on this or another site, or restore all defaults with one click (tab *Settings file*).
@@ -136,7 +136,7 @@ Miernik umożliwia pomiary stacji ładowania pojazdów elektrycznych AC przy uż
    **System → Install → Extensions**.
 3. Upload the package file. The native Joomla package will automatically deploy:
    * **`plg_system_aimarkdown`** (Core negotiation, DOM parsing, caching, and analytics engine).
-   * **`com_aimarkdown`** (Sidebar menu proxy registered under the **Components** menu).
+   * **`com_aimarkdown`** (the control panel and the pages of settings, under the **Components** menu).
    * **`mod_aimarkdown_dashboard`** (Real-time crawler monitor widget on Joomla's Home Dashboard).
 4. The installer script automatically sets the plugin order to the end of the system queue, enables all extensions, creates database tables, and purges system caches.
 
@@ -144,7 +144,7 @@ Miernik umożliwia pomiary stacji ładowania pojazdów elektrycznych AC przy uż
 
 ## ⚙️ Configuration Reference
 
-Access the settings via the new sidebar item: **Components → AI Markdown for Gridbox** (or *System → Plugins*):
+Access the settings via **Components → AI Markdown for Gridbox**: the control panel has a tile for every part of the settings (Markdown pages, Merchant & CTA, LLMS.txt, Texts for AI, AI Analytics, Settings file). The plugin's own settings form (*System → Plugins*) still works, with the same fields:
 
 | Tab | Setting | Default | Description |
 | :--- | :--- | :--- | :--- |

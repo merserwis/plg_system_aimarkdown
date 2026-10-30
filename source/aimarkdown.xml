@@ -7,7 +7,7 @@
     <creationDate>2026-10-15</creationDate>
     <copyright>Copyright (C) 2026 Merserwis. All rights reserved.</copyright>
     <license>GNU Affero General Public License version 3 or later (AGPL-3.0-or-later)</license>
-    <version>1.6.7</version>
+    <version>1.6.8</version>
     <description>PLG_SYSTEM_AIMARKDOWN_XML_DESCRIPTION</description>
     
     <namespace path="src">Merserwis\Plugin\System\AiMarkdown</namespace>

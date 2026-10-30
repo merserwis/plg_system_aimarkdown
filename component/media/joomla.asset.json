@@ -1,0 +1,14 @@
+{
+  "$schema": "https://developer.joomla.org/schemas/json-schema/web_assets.json",
+  "name": "com_aimarkdown",
+  "version": "1.6.8",
+  "description": "AI Markdown for Gridbox: the control panel and the pages of settings",
+  "license": "AGPL-3.0-or-later",
+  "assets": [
+    {
+      "name": "com_aimarkdown.admin",
+      "type": "style",
+      "uri": "com_aimarkdown/aimarkdown-admin.css"
+    }
+  ]
+}

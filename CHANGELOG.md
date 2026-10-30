@@ -2,6 +2,32 @@
 
 All changes of **AI Markdown for Gridbox**, newest first. Each version is also published as a [GitHub release](https://github.com/merserwis/plg_system_aimarkdown/releases) with its installation package.
 
+## 1.6.8 — 2026-10-30
+
+A review of the whole code (done with Codex and checked by hand) and an administrator panel that looks and works like those of MerTools and Better Search.
+
+### ✨ Administrator panel
+
+- **Control panel and pages of settings** under *Components → AI Markdown for Gridbox*, as in MerTools and Better Search: tiles of the parts of the settings in sections (with a dot for what is on), a status box (version, plugin, size of `/llms.txt`, visits of AI bots in 30 days), shortcuts and a reminder to check the site; every part has its own page and a submenu entry (Markdown Pages, LLMS.txt, AI Analytics). The settings are still the parameters of the plugin and are saved through Joomla's plugin model, so nothing changes for the site; the form of the plugin (*System → Plugins*) works as before. The component was a bare redirect to it until now.
+- **Help (“?”) as in MerTools:** the description that sits in the tooltip is no longer shown a second time under the field; a click anywhere closes the tooltip.
+- **Cards follow Atum's colours** (dark mode too): the `/llms.txt` panel, the analytics dashboard, the settings-file panel and the dashboard widget used fixed light colours and shadows; headings and buttons now follow the same hierarchy as in the sibling plugins.
+- Component and widget carry the version of the package again (they stayed at 1.6.6).
+
+### 🛠 Fixes
+
+- **`/llms.txt` lists only what visitors can see.** An article of an unpublished or non-public category was listed, and a public menu item took the meta description of its target without checking that the target is published and public.
+- **Switching `/llms.txt` off no longer deletes a file you keep by hand.** The plugin remembers the checksum of the file it wrote and removes it (when switched off, on reset or on uninstall) only if it is still that file. A file that was there before the first generation is kept in `administrator/cache/plg_system_aimarkdown/llms.original.txt` and put back when the generator is switched off or the extension is uninstalled. Files made by earlier versions are still treated as the plugin's own. An update no longer empties that folder, only the cached Markdown pages in it.
+- **A stranger's request cannot empty the cache.** Any POST to `com_gridbox` in the administrator cleared the Markdown cache before the user was checked; now only a signed-in manager of Gridbox does.
+- **`Accept: text/html, text/markdown;q=0`** no longer returns Markdown (`q=0` means “not acceptable”).
+- **A site switched to offline** no longer serves its pages from the Markdown cache.
+- **A missing `/llms.txt`** asked for directly is generated at most once an hour (as in the background), not by every request when the folder is not writable.
+- **Prices such as `1,234`** (English thousands grouping) are read as 1234, not 1.234.
+- **Settings file:** the export takes the settings of other pages from what is saved (a page of the panel holds only its own fields), and the import restores the rows of the own FAQ (an empty list in the file empties them).
+
+### ⬆️ Update
+
+- Nothing to do: settings are kept. After the update `/llms.txt` may lose items that were not public. Pages of the Markdown cache are served for up to the cache time after the end of a scheduled publication (the cache is emptied whenever content is saved, but the end date itself is not an event): lower the cache time if you plan short publications.
+
 ## 1.6.7 — 2026-10-26
 
 The SEO audit of merserwis.pl (an agent-readiness check) found three relations of the `Link` header that point to the wrong things, a Markdown version that treats every page as a product, and an `/llms.txt` that is too big and puts services among the products.
